@@ -2,7 +2,8 @@
 
 ### Dolly Setup
 
-[Reference](https://github.com/chapulina/dolly)
+[Reference1](https://github.com/chapulina/dolly)  
+[Reference2](https://www.youtube.com/watch?v=Gwbk6Qf_TqY&t=1528s)  
 
 #### Install gazebo_ros_pkgs
         $ sudo apt install ros-dashing-gazebo-ros-pkgs  
@@ -46,6 +47,6 @@
         $ colcon build --symlink-install  
         $ source /usr/share/gazebo/setup.sh  
         $ source install/setup.bash  
-        $ ros2 launch dolly_drive dolly_drive.launch.py
+        $ ros2 launch dolly_drive dolly_drive.launch.py  
 
 <img src="./images/demo.gif" width="600" >
