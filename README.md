@@ -5,7 +5,7 @@
 [Reference](https://github.com/chapulina/dolly)
 
 #### Install gazebo_ros_pkgs
-$ sudo apt install ros-dashing-gazebo-ros-pkgs  
+        $ sudo apt install ros-dashing-gazebo-ros-pkgs  
 
 #### Build packages
 
@@ -16,16 +16,16 @@ $ sudo apt install ros-dashing-gazebo-ros-pkgs
 
 #### Setup environment variables
 
-$ . /usr/share/gazebo/setup.sh  
-$ . ~/ros2_simulation_ws/install/setup.bash  
+        $ . /usr/share/gazebo/setup.sh  
+        $ . ~/ros2_simulation_ws/install/setup.bash  
 
 #### Launch Dolly in a city 
 
-$ ros2 launch dolly_gazebo dolly.launch.py world:=dolly_city.world  
+        $ ros2 launch dolly_gazebo dolly.launch.py world:=dolly_city.world  
 
 #### Launch Dolly in an empty world
 
-$ ros2 launch dolly_gazebo dolly.launch.py world:=dolly_empty.world  
+        $ ros2 launch dolly_gazebo dolly.launch.py world:=dolly_empty.world  
 
 ### Packages
 
