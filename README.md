@@ -18,7 +18,7 @@
 
         $ source /usr/share/gazebo/setup.sh  
         $ source ~/ros2_simulation_ws/install/setup.bash  
-        <!-- $ source ~/ros2_simulation_ws/install/local_setup.bash   -->
+<!-- $ source ~/ros2_simulation_ws/install/local_setup.bash -->
 
 #### Launch Dolly in a city 
 
@@ -40,7 +40,8 @@
 
 
 ### Run
-        <!-- $ cp -r ~/ros2_simulation_ws/src/dolly/dolly_gazebo/models/casual_female/ /usr/share/gazebo/models -->
+
+<!-- $ cp -r ~/ros2_simulation_ws/src/dolly/dolly_gazebo/models/casual_female/ /usr/share/gazebo/models -->
         $ cd ~/ros2_simulation_ws
         $ colcon build --symlink-install  
         $ source /usr/share/gazebo/setup.sh  
