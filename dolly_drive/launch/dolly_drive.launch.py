@@ -28,16 +28,8 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
 
-    pkg_gazebo_ros = get_package_share_directory('gazebo_ros')
-    pkg_dolly_gazebo = get_package_share_directory('dolly_gazebo')
     pkg_dolly_drive = get_package_share_directory('dolly_drive')
 
-    # Gazebo launch
-    gazebo = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_gazebo_ros, 'launch', 'gazebo.launch.py'),
-        )
-    )
 
     # Follow node
     follow = Node(
@@ -45,8 +37,8 @@ def generate_launch_description():
         node_executable='dolly_follow',
         output='screen',
         remappings=[
-            ('cmd_vel', '/dolly/cmd_vel'),
-            ('laser_scan', '/dolly/laser_scan')
+            ('cmd_vel', '/simu/cmd_vel'),
+            ('laser_scan', '/simu/scan')
         ]
     )
 
@@ -57,7 +49,6 @@ def generate_launch_description():
           default_value=[os.path.join(pkg_dolly_gazebo, 'worlds', 'dolly_empty.world'), ''],
           description='SDF world file'),
 
-        gazebo,
         follow,
 
     ])
