@@ -28,27 +28,27 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
 
-    pkg_dolly_drive = get_package_share_directory('dolly_drive')
+    pkg_dolly_drive = get_package_share_directory('planner')
 
 
     # Follow node
     follow = Node(
-        package='dolly_drive',
-        node_executable='dolly_follow',
+        package='planner',
+        node_executable='dolly_planner',
         output='screen',
         remappings=[
-            ('cmd_vel', '/simu/cmd_vel'),
+            ('cmd_vel', '/simu/cmd'),
             ('laser_scan', '/simu/scan')
         ]
     )
 
 
     return LaunchDescription([
-        DeclareLaunchArgument(
-          'world',
-          default_value=[os.path.join(pkg_dolly_gazebo, 'worlds', 'dolly_empty.world'), ''],
-          description='SDF world file'),
+        # DeclareLaunchArgument(
+        #   'world',
+        #   default_value=[os.path.join(pkg_dolly_gazebo, 'worlds', 'dolly_empty.world'), ''],
+        #   description='SDF world file'),
 
-        follow,
+        follow
 
     ])

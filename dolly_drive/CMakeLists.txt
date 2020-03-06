@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(dolly_drive)
+project(planner)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -32,14 +32,14 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-add_executable(dolly_follow src/dolly_follow.cpp)
-ament_target_dependencies(dolly_follow
+add_executable(dolly_planner src/dolly_follow.cpp)
+ament_target_dependencies(dolly_planner
   "rclcpp"
   "geometry_msgs"
   "sensor_msgs")
 
 install(TARGETS
-   dolly_follow
+   dolly_planner
    DESTINATION lib/${PROJECT_NAME}
  )
 
