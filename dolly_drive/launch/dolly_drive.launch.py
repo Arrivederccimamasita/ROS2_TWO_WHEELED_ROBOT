@@ -36,6 +36,7 @@ def generate_launch_description():
         package='planner',
         node_executable='dolly_planner',
         output='screen',
+        # emulate_tty=True,
         remappings=[
             ('cmd_vel', '/simu/cmd'),
             ('laser_scan', '/simu/scan')
