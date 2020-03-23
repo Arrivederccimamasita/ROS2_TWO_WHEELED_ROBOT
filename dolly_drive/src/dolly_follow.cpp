@@ -73,7 +73,7 @@ private:
       float e_y = 0;
       
      
-      //Errors definition
+      /// Defined Errors
       e_x=min_range * sin(turn);
       e_y=min_range * cos(turn) - _min_dist;
       int flow = ((min_range - _min_dist > 0) ? 1 : -1);
@@ -126,6 +126,7 @@ private:
 
 int main(int argc, char *argv[])
 {
+   setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 
    // Forward command line arguments to ROS
    rclcpp::init(argc, argv);
