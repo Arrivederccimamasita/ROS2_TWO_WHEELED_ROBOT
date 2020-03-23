@@ -20,6 +20,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(diagnostic_updater REQUIRED)
 
 if(BUILD_TESTING)
@@ -37,6 +38,7 @@ add_executable(dolly_planner src/dolly_follow.cpp)
 ament_target_dependencies(dolly_planner
   "rclcpp"
   "geometry_msgs"
+  "std_msg"
   "sensor_msgs"
   "diagnostic_updater"  
 )

@@ -1,6 +1,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
+#include <diagnostic_updater/publisher.hpp>
 
 #include <memory>
 #include <utility>
@@ -19,6 +21,8 @@ public:
 
       // Quality of service
       auto default_qos = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
+      diagnostic_updater::Updater updater(this);
+      
 
       // Subscribe to sensor messages, (topic_name, qos_to_use, callback_function)
       // &Follow::OnSensorMsg: OnSensorMsg is a function which belongs to class Follow
@@ -32,7 +36,15 @@ public:
       // Advertise velocity commands, create a publisher
       // (topic_name, qos_to_use)
       _cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", default_qos);
+      diagnostic_updater::HeaderlessTopicDiagnostic _cmd_freq("cmd_vel_freq",
+             updater,
+             diagnostic_updater::FrequencyStatusParam(&_min_freq, &_max_freq, _freq_tolerance, _window_size)
+            //  ,diagnostic_updater::TimeStampStatusParam(_min_acceptable, _max_acceptable)
+            );
    }
+
+
+   
 
 private:
    /// Callback for sensor message subscriber Laser scan message
@@ -78,6 +90,7 @@ private:
       e_y=min_range * cos(turn) - _min_dist;
       int flow = ((min_range - _min_dist > 0) ? 1 : -1);
 
+      /// Control Signals 
       velocity_control = flow * sqrt(pow(e_x, 2.0) + pow(e_y, 2.0));
       angular_control = turn;
 
@@ -86,11 +99,11 @@ private:
       RCLCPP_INFO(this->get_logger(),"Control a punto aplicado. FLOW %i",flow);
       RCLCPP_INFO(this->get_logger(),"Errors: x %f y %f\n", e_x, e_y); 
 
-      if (_start_measuring)
-      {
-         _latencia = _current_scan_stamp.nanoseconds() - _last_scan_stamp.nanoseconds();
-         RCLCPP_INFO(this->get_logger(),"Latencia: %f s.", _latencia/1e9); 
-      }
+         if (_start_measuring)
+         {
+            _latencia = _current_scan_stamp.nanoseconds() - _last_scan_stamp.nanoseconds();
+            RCLCPP_INFO(this->get_logger(),"Latencia: %f s.", _latencia/1e9); 
+         }
 
       } else
       {
@@ -100,6 +113,7 @@ private:
       }
          
       _cmd_pub->publish(std::move(cmd_msg));
+      // _cmd_pub.publish(cmd_msg);
       _last_scan_stamp = _current_scan_stamp;
       _start_measuring = true;
 
@@ -117,10 +131,20 @@ private:
    _Float32 _kv = 0.8;
    _Float32 _ksigma = 1.2;
 
+
+   
+
    rclcpp::Time _current_scan_stamp;
    rclcpp::Time _last_scan_stamp;
    bool _start_measuring = false;
    double _latencia;
+
+   double _min_freq        = 9.0;
+   double _max_freq        = 11.0;
+   double _freq_tolerance  = 0.1;
+   double _window_size     = 100;
+   double _min_acceptable  = 0.05;
+   double _max_acceptable  = 0.15;
 
 };
 
