@@ -167,6 +167,8 @@ private:
                   cmd_msg->angular.z,
                   cmd_msg->linear.x);
       _cmd_pub->publish(std::move(cmd_msg));
+      RCLCPP_INFO(this->get_logger(), "time %.2f.%d", this->now().seconds(), this->now().nanoseconds());
+      RCLCPP_INFO(this->get_logger(), "CLOCK Publish CMD_VEL is %ld", rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds());
 
    }
 
@@ -212,9 +214,9 @@ private:
    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr _cmd_pub;
 
    /// Minimum allowed distance from target
-   double _min_dist = 1.0;
+   double _min_dist = 0.5;
    _Float32 _radToAngle = 360.0 / (2 * PI);
-   _Float32 _kv = 0.8;
+   _Float32 _kv = 1.2;
    _Float32 _ksigma = 0.7;
 
    rclcpp::Time _current_scan_stamp;
