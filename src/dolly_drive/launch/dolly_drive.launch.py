@@ -15,7 +15,6 @@
 """Launch Gazebo with a world that has Dolly, as well as the follow node."""
 
 import os
-
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -24,32 +23,37 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.actions import ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
 
+    ld = LaunchDescription()
+
     pkg_dolly_drive = get_package_share_directory('planner')
 
-
+    cmd_topic_name="/simu/cmd"
+    scan_topic_name="/simu/scan"
     # Follow node
-    follow = Node(
-        package='planner',
-        node_executable='dolly_planner',
-        output='screen',
-        # emulate_tty=True,
-        remappings=[
-            ('cmd_vel', '/simu/cmd'),
-            ('laser_scan', '/simu/scan')
-        ]
-    )
+
+    
+    for i in range(5):
+        crr_cmd=cmd_topic_name + '_' + str(i+1)
+        crr_scan=scan_topic_name + '_' + str(i+1)
+        crr_node_name='follower'
+        follow = Node(
+            package='planner',
+            name=crr_node_name,
+            node_executable='dolly_planner',                
+            remappings=[
+                ('cmd_vel', crr_cmd),
+                ('laser_scan', crr_scan)],
+            output='screen',        
+            arguments=[('__log_level:=info')]
+        )
+        ld.add_action(follow)
 
 
-    return LaunchDescription([
-        # DeclareLaunchArgument(
-        #   'world',
-        #   default_value=[os.path.join(pkg_dolly_gazebo, 'worlds', 'dolly_empty.world'), ''],
-        #   description='SDF world file'),
 
-        follow
-
-    ])
+    return ld
