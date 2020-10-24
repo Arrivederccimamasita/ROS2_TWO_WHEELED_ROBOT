@@ -26,29 +26,41 @@ from launch_ros.actions import Node
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 
+cmd_topic_name="/simu/cmd"
+scan_topic_name="/simu/scan"
+TOPIC_LIST_SIZE=1
+node_name='follower'
+
+def iterate_topic_name(init_name):
+    topic_list=[]
+    for i in range(TOPIC_LIST_SIZE):
+        crr_name=init_name+'_'+str(i+1)
+        topic_list.append(crr_name)
+
+    return topic_list
 
 def generate_launch_description():
+    
+    pkg_dolly_drive = get_package_share_directory('planner')
+    # Follow node
 
     ld = LaunchDescription()
 
-    pkg_dolly_drive = get_package_share_directory('planner')
-
-    cmd_topic_name="/simu/cmd"
-    scan_topic_name="/simu/scan"
-    # Follow node
-
+    scan_topic_list=iterate_topic_name(scan_topic_name)
+    cmd_topic_list=iterate_topic_name(cmd_topic_name)
     
-    for i in range(5):
-        crr_cmd=cmd_topic_name + '_' + str(i+1)
-        crr_scan=scan_topic_name + '_' + str(i+1)
-        crr_node_name='follower'
+    lenght=len(scan_topic_list)
+    if lenght==1:
+        scan_topic_list=["/simu/scan"]
+        cmd_topic_list=["/simu/cmd"]
+    for i in range(lenght): 
         follow = Node(
             package='planner',
-            name=crr_node_name,
+            name=node_name,
             node_executable='dolly_planner',                
             remappings=[
-                ('cmd_vel', crr_cmd),
-                ('laser_scan', crr_scan)],
+                ('cmd_vel', cmd_topic_list[i]),
+                ('laser_scan', scan_topic_list[i])],
             output='screen',        
             arguments=[('__log_level:=info')]
         )
