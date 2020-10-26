@@ -65,23 +65,26 @@ public:
 
       // _last_scan_stamp(0, 0);
       ///Config////
-      _numWindows = 21;
+      _numWindows = 43;
       _currentView.reserve(_numWindows);
 
-      _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
-          "laser_scan",
-          default_qos,
-          std::bind(&Follow::seeLaser, this, std::placeholders::_1));
+      _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
+                                                                           default_qos,
+                                                                           std::bind(&Follow::seeLaser, this, std::placeholders::_1));
+      
+      _cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 
+                                                                   default_qos);
       // std::bind(&Follow::seeLaser, this, std::placeholders::_1));
       // Advertise velocity commands, create a publisher
       // (topic_name, qos_to_use)
-      _cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", default_qos);
       // diagnostic_updater::HeaderlessTopicDiagnostic _cmd_freq("cmd_vel_freq",
       //        updater,
       //        diagnostic_updater::FrequencyStatusParam(&_min_freq, &_max_freq, _freq_tolerance, _window_size)
       //       //  ,diagnostic_updater::TimeStampStatusParam(_min_acceptable, _max_acceptable)
       //       );e
    }
+
+
 
    /// Callback for sensor message subscriber Laser scan message
    void OnSensorMsg(const sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -137,8 +140,8 @@ public:
 
          if (_start_measuring)
          {
-            _latencia = _current_scan_stamp.nanoseconds() - _last_scan_stamp.nanoseconds();
-            RCLCPP_INFO(this->get_logger(), "Latencia: %f s.", _latencia / 1e9);
+            _scanLaten = _current_scan_stamp.nanoseconds() - _last_scan_stamp.nanoseconds();
+            RCLCPP_INFO(this->get_logger(), "Latencia: %f s.", _scanLaten / 1e9);
          }
       }
       else
@@ -152,6 +155,143 @@ public:
       // _cmd_pub.publish(cmd_msg);
       _last_scan_stamp = _current_scan_stamp;
       _start_measuring = true;
+   }
+
+
+
+   // void realSample(sensor_msgs::msg::LaserScan::SharedPtr msg)
+   // {
+
+   //    rttest_spin(seeLaser, static_cast<void*>(msg));
+   // }
+
+   void seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
+   {
+      RCLCPP_INFO(this->get_logger(), 
+                  "CALLBACK:seeLaser...");
+      
+      _current_scan_stamp = msg->header.stamp;
+      RCLCPP_INFO(this->get_logger(), 
+                  "seeLaser::Timestamp recived=%f sec ", _current_scan_stamp.seconds());
+
+      if (_last_scan_stamp.seconds()) 
+      {
+         // RCLCPP_INFO(this->get_logger(), "seeLaser() Scan Latency: %f s.", _current_scan_stamp.seconds());
+
+         _scanLaten = _current_scan_stamp.seconds() - _last_scan_stamp.seconds();
+         RCLCPP_INFO(this->get_logger(), "seeLaser() Scan Latency: %f s.", _scanLaten);
+      }                 
+
+      // Fragmenta el rango de laser entre los valores del current view y haya minimos
+      auto size = ((msg->ranges.size()) / _numWindows) +1;
+      // create array of vectors to store the sub-vectors
+      RCLCPP_DEBUG(this->get_logger(), 
+                  "seeLaser() Configure for Windows \n ScanSize: %i\n NºWindows:%i \n WindowsSize: %i", msg->ranges.size(), _numWindows, size);
+      _currentView.clear();
+
+      // Lista de vectores
+      std::vector<float> subVec[_numWindows];
+      // std::vector<std::vector<float>> subVetors;
+
+      for (int kWindow = 0; kWindow < _numWindows; ++kWindow)
+      {
+         auto startW_ptr = std::next(msg->ranges.cbegin(), kWindow * size);
+         auto endW_ptr = std::next(msg->ranges.cbegin(), kWindow * size + size);
+
+         // allocate memory for the sub-vector
+         subVec[kWindow].resize(size);
+
+         // code to handle the last sub-vector as it might
+         // contain less elements
+         if (kWindow * size + size > msg->ranges.size()-1)
+         {
+            RCLCPP_DEBUG(this->get_logger(), "seeLaser() Exceding scan Range");
+            endW_ptr = msg->ranges.cend();
+            subVec[kWindow].resize(msg->ranges.size() - kWindow * size);
+         }
+
+         // copy elements from the input range to the sub-vector
+         std::copy(startW_ptr, endW_ptr, subVec[kWindow].begin());
+         // for (std::vector<float>::const_iterator i = subVec[kWindow].begin(); i != subVec[kWindow].end(); ++i)
+         //    {
+         //       std::cout << *i << ' ';
+         //    }
+
+         // Find MinDist for Window 
+         auto wDistmin  =  *std::min_element(startW_ptr, endW_ptr);
+
+         // Set Windows Flags
+         if (wDistmin < _min_dist)
+         { 
+            _currentView.push_back(-1);
+            // Check Collision
+            if (wDistmin <= _colision_dist){
+               _colisions++;
+               RCLCPP_INFO(this->get_logger(), "seeLaser() TotalColision: %d", _colisions);   
+               RCLCPP_INFO(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ", kWindow, wDistmin, _currentView.back());
+            } 
+
+         }else
+          _currentView.push_back(1);
+
+         RCLCPP_DEBUG(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ", kWindow, wDistmin, _currentView.back());
+      }
+      auto sum_of_elems = std::accumulate(_currentView.begin(), _currentView.end(), 0.0);
+      RCLCPP_DEBUG(this->get_logger(), "seeLaser() WindowsFlagsSum is %f", sum_of_elems);
+
+      _last_scan_stamp = _current_scan_stamp;
+         // avoidObstacle();
+      // if (sum_of_elems < 5)
+      // else
+         sendDirection();
+   }
+
+
+
+   void avoidObstacle()
+   {
+      RCLCPP_INFO(this->get_logger(), "avoidObstacle() -");
+
+      auto middle_ptr = _currentView.begin() + (_currentView.size() / 2);
+      float lineal_dir = *middle_ptr - 1;
+      float angular_dir = 0.0;
+      for (auto it = _currentView.begin(); it != _currentView.end(); it++)
+      {
+         auto PropDivision = static_cast<float>(std::distance(middle_ptr, it));
+
+         // RCLCPP_INFO(this->get_logger(),"PropDivision = %f Value = %f ",
+         //    PropDivision, *it);
+         if (it != middle_ptr)
+         {
+            angular_dir += *it * (1. / PropDivision);
+            if (*it < 0)
+               lineal_dir -= abs(PropDivision) / 10;
+         }
+      }
+
+      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
+      cmd_msg->linear.x = _kv * lineal_dir;
+      cmd_msg->angular.z = _ksigma * angular_dir;
+
+      RCLCPP_INFO(this->get_logger(), "avoidObstacle() CMD: Angular = %f Lineal = %f",
+                  cmd_msg->angular.z,
+                  cmd_msg->linear.x);
+      // RCLCPP_INFO(this->get_logger(), "sendDirection::NODE TIME is %.2f %.2f", this->now().seconds(), this->now().nanoseconds());
+      if (_last_time_stamp.nanoseconds())
+      {
+         
+         RCLCPP_INFO(this->get_logger(), "avoidObstacle() CLOCK RCL_SYSTEM_TIME is %ld", rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds());
+         RCLCPP_INFO(this->get_logger(), "avoidObstacle() CLOCK RCL_ROS_TIME is %ld", rclcpp::Clock(RCL_ROS_TIME).now().nanoseconds());
+         _timeLaten = rclcpp::Clock(RCL_ROS_TIME).now().nanoseconds() - _last_time_stamp.nanoseconds();
+         RCLCPP_INFO(this->get_logger(), "avoidObstacle() Time Cmd Latency: %f s.", _timeLaten/1e9);
+
+      }
+      _last_time_stamp  = rclcpp::Clock(RCL_ROS_TIME).now();
+
+      auto ratio  = (_scanLaten/_timeLaten);
+      RCLCPP_INFO(this->get_logger(), "avoidObstacle() Real Time Ratio: %d s.", ratio);
+
+      _cmd_pub->publish(std::move(cmd_msg));
    }
 
    void sendDirection()
@@ -188,112 +328,27 @@ public:
       cmd_msg->linear.x = _kv * lineal_dir;
       cmd_msg->angular.z = _ksigma * angular_dir;
 
-      RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
+      RCLCPP_DEBUG(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
                   cmd_msg->angular.z,
                   cmd_msg->linear.x);
       // RCLCPP_INFO(this->get_logger(), "sendDirection::NODE TIME is %.2f %d", this->now().seconds(), this->now().nanoseconds());
-      RCLCPP_INFO(this->get_logger(), "sendDirection::CLOCK RCL_SYSTEM_TIME is %ld", rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds());
+      if (_last_time_stamp.nanoseconds())
+      {
+         
+         RCLCPP_DEBUG(this->get_logger(), "sendDirection() CLOCK RCL_SYSTEM_TIME is %ld", rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds());
+         RCLCPP_DEBUG(this->get_logger(), "sendDirection() CLOCK RCL_ROS_TIME is %ld", rclcpp::Clock(RCL_ROS_TIME).now().nanoseconds());
+         _timeLaten = rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds() - _last_time_stamp.nanoseconds();
+         RCLCPP_DEBUG(this->get_logger(), "sendDirection() Time Cmd Latency: %f s.", _timeLaten/1e9);
+
+      }
+      auto ratio  = (_scanLaten/_timeLaten)*100;
+      RCLCPP_INFO(this->get_logger(), "sendDirection() Real Time Ratio: %d s.", ratio);
+
+      _last_time_stamp  = rclcpp::Clock(RCL_SYSTEM_TIME).now();
       _cmd_pub->publish(std::move(cmd_msg));
    }
 
-   void avoidObstacle()
-   {
-      RCLCPP_INFO(this->get_logger(), "avoidObstacle() -");
-
-      auto middle_ptr = _currentView.begin() + (_currentView.size() / 2);
-      float lineal_dir = *middle_ptr - 1;
-      float angular_dir = 0.0;
-      for (auto it = _currentView.begin(); it != _currentView.end(); it++)
-      {
-         auto PropDivision = static_cast<float>(std::distance(middle_ptr, it));
-
-         // RCLCPP_INFO(this->get_logger(),"PropDivision = %f Value = %f ",
-         //    PropDivision, *it);
-         if (it != middle_ptr)
-         {
-            angular_dir += *it * (1. / PropDivision);
-            if (*it < 0)
-               lineal_dir -= abs(PropDivision) / 10;
-         }
-      }
-
-      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_msg->linear.x = _kv * lineal_dir;
-      cmd_msg->angular.z = _ksigma * angular_dir;
-
-      RCLCPP_INFO(this->get_logger(), "avoidObstacle::Angular = %f Lineal = %f",
-                  cmd_msg->angular.z,
-                  cmd_msg->linear.x);
-      // RCLCPP_INFO(this->get_logger(), "sendDirection::NODE TIME is %.2f %d", this->now().seconds(), this->now().nanoseconds());
-      // RCLCPP_INFO(this->get_logger(), "avoidObstacle::CLOCK RCL_SYSTEM_TIME is %ld", rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds());
-      _cmd_pub->publish(std::move(cmd_msg));
-   }
-
-   // void realSample(sensor_msgs::msg::LaserScan::SharedPtr msg)
-   // {
-
-   //    rttest_spin(seeLaser, static_cast<void*>(msg));
-   // }
-
-   void seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
-   {
-      RCLCPP_INFO(this->get_logger(), 
-                  "CALLBACK:seeLaser...");
-      
-      _current_scan_stamp = msg->header.stamp;
-      RCLCPP_INFO(this->get_logger(), 
-                  "seeLaser::Timestamp recived=%f sec ", _current_scan_stamp.seconds());
-
-      // Fragmenta el rango de laser entre los valores del current view y haya minimos
-      auto size = (msg->ranges.size()) / _numWindows + 1;
-      // create array of vectors to store the sub-vectors
-      RCLCPP_INFO(this->get_logger(), 
-                  "seeLaser() Configure for Windows \n ScanSize: %i\n NºWindows: \n WindowsSize: %i", _numWindows, msg->ranges.size());
-      _currentView.clear();
-
-      // Lista de vectores
-      std::vector<float> subVec[_numWindows];
-
-      for (int kWindow = 0; kWindow < _numWindows-1; ++kWindow)
-      {
-         auto startW_ptr = std::next(msg->ranges.cbegin(), kWindow * size);
-         auto endW_ptr = std::next(msg->ranges.cbegin(), kWindow * size + size-1);
-
-         // allocate memory for the sub-vector
-         subVec[kWindow].resize(size);
-
-         // code to handle the last sub-vector as it might
-         // contain less elements
-         if (kWindow * size + size > msg->ranges.size()-1)
-         {
-            endW_ptr = msg->ranges.cend();
-            subVec[kWindow].resize(msg->ranges.size() - kWindow * size);
-         }
-
-         // copy elements from the input range to the sub-vector
-         std::copy(startW_ptr, endW_ptr, subVec[kWindow].begin());
-         auto wDistmin  =  *std::min_element(startW_ptr, endW_ptr);
-         RCLCPP_INFO(this->get_logger(), "View path %i, mindist %f", kWindow, wDistmin);
-         if (wDistmin < _min_dist)
-         { 
-            _currentView.push_back(-1);
-            if (wDistmin <= _colision_dist) _colisions++;
-
-            RCLCPP_INFO(this->get_logger(), "seeLaser() TotalColision: %d", _colisions);
-
-         }else
-          _currentView.push_back(1);
-         RCLCPP_DEBUG(this->get_logger(), "View path %i, mindist %f", kWindow, _currentView[kWindow]);
-      }
-      auto sum_of_elems = std::accumulate(_currentView.begin(), _currentView.end(), 0.0);
-      RCLCPP_DEBUG(this->get_logger(), "seeLaser() WindowsFlagsSum is %f", sum_of_elems);
-
-         // avoidObstacle();
-      // if (sum_of_elems < 5)
-      // else
-         sendDirection();
-   }
-
+  
    /// Laser messages subscriber
    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr _laser_sub;
 
@@ -309,12 +364,14 @@ public:
 
    rclcpp::Time _current_scan_stamp;
    rclcpp::Time _last_scan_stamp;
+   rclcpp::Time _last_time_stamp;
    // Regions _currentView;
    std::vector<float> _currentView;
    int _numWindows;
 
    bool _start_measuring = false;
-   double _latencia;
+   double _scanLaten;
+   double _timeLaten;
 
    double _min_freq = 9.0;
    double _max_freq = 11.0;
