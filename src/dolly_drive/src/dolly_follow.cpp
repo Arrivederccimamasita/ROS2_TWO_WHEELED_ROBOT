@@ -3,69 +3,18 @@
 /// Follow node, which subscribes to laser scan messages and publishes
 /// velocity commands
 
-class Follow : public rclcpp::Node
-{
-
-public:
    /// Follow node, which subscribes to laser scan messages and publishes
    /// velocity commands.
-   Follow() : Node("follow")
+   Follow::Follow() : Node("follow")
    {
 
       // Quality of service
       auto default_qos = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
+      RCLCPP_DEBUG(this->get_logger(), "DEBUG QoS"); //ToDo Control sobre el QoS establecido
 
-      // diagnostic_updater::Updater updater(this);
-      rttest_set_sched_priority(98, SCHED_RR);
 
-      std::vector<std::string> arguments = {"-i", "1", "-f", "~/dataout.txt"};
-      std::vector<char *> argv;
-
-      for (const auto &arg : arguments)
-         argv.push_back((char *)arg.data());
-
-      argv.insert(argv.begin(), nullptr);
-      // RCLCPP_INFO(this->get_logger(), "rttest ARGC= %i", argv.size());
-
-      if (rttest_read_args(argv.size(), argv.data()) != 0)
-      {
-         // perror("Couldn't read arguments for rttest");
-         // RCLCPP_INFO(this->get_logger(),"Couldn't read arguments for rttest");
-         RCLCPP_INFO(this->get_logger(), "Fail at this point");
-         throw std::invalid_argument("Couldn't read arguments for rttest");
-      }
-      RCLCPP_DEBUG(this->get_logger(), "Im INFO at this point");
-
-      // RCLCPP_INFO(this->get_logger(), "Couldn't lock memory");
-      // if (rttest_lock_memory() != 0)
-      // {
-      //    // perror("Couldn't lock memory");
-      //    // RCLCPP_INFO(this->get_logger(),"Couldn't lock memory");
-      //    // throw rclcpp::exceptions::from_rcl_error(ret,"Couldn't lock memory");
-      //    throw std::invalid_argument( "Couldn't lock memoryeEeb" );
-      // }
-
-      // auto thread_rttest_instance = get_rttest_thread_instance(pthread_self());
-      // if (!thread_rttest_instance)
-      // {
-      //    throw std::invalid_argument( "Couldn't lock memory" );
-      // //     return -1;
-      // }
-      // return thread_rttest_instance->lock_memory();
-
-      // rttest_lock_and_prefault_dynamic();
-      // Subscribe to sensor messages, (topic_name, qos_to_use, callback_function)
-      // &Follow::OnSensorMsg: OnSensorMsg is a function which belongs to class Follow
-
-      // _last_scan_stamp(0, 0);
-      // _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
-      //     "laser_scan",
-      //     default_qos,
-      //     std::bind(&Follow::OnSensorMsg, this, std::placeholders::_1));
-
-      // _last_scan_stamp(0, 0);
       ///Config////
-      _numWindows = 43;
+
       _currentView.reserve(_numWindows);
 
       _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
@@ -87,7 +36,7 @@ public:
 
 
    /// Callback for sensor message subscriber Laser scan message
-   void OnSensorMsg(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+   void Follow::onSensorMsg(const sensor_msgs::msg::LaserScan::SharedPtr msg)
    {
       /// Get errors Position
       // Find closest hit
@@ -157,15 +106,7 @@ public:
       _start_measuring = true;
    }
 
-
-
-   // void realSample(sensor_msgs::msg::LaserScan::SharedPtr msg)
-   // {
-
-   //    rttest_spin(seeLaser, static_cast<void*>(msg));
-   // }
-
-   void seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
+   void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
    {
       RCLCPP_INFO(this->get_logger(), 
                   "CALLBACK:seeLaser...");
@@ -174,23 +115,23 @@ public:
       RCLCPP_INFO(this->get_logger(), 
                   "seeLaser::Timestamp recived=%f sec ", _current_scan_stamp.seconds());
 
-      if (_last_scan_stamp.seconds()) 
-      {
-         // RCLCPP_INFO(this->get_logger(), "seeLaser() Scan Latency: %f s.", _current_scan_stamp.seconds());
+      // if (_last_scan_stamp.seconds()) 
+      // {
+      //    // RCLCPP_INFO(this->get_logger(), "seeLaser() Scan Latency: %f s.", _current_scan_stamp.seconds());
 
-         _scanLaten = _current_scan_stamp.seconds() - _last_scan_stamp.seconds();
-         RCLCPP_INFO(this->get_logger(), "seeLaser() Scan Latency: %f s.", _scanLaten);
-      }                 
+      //    _scanLaten = _current_scan_stamp.seconds() - _last_scan_stamp.seconds();
+      //    RCLCPP_INFO(this->get_logger(), "seeLaser() Scan Latency: %f s.", _scanLaten);
+      // }                 
 
       // Fragmenta el rango de laser entre los valores del current view y haya minimos
-      auto size = ((msg->ranges.size()) / _numWindows) +1;
+      auto size =ceil(double(msg->ranges.size()) / double(_numWindows));
       // create array of vectors to store the sub-vectors
-      RCLCPP_DEBUG(this->get_logger(), 
-                  "seeLaser() Configure for Windows \n ScanSize: %i\n NºWindows:%i \n WindowsSize: %i", msg->ranges.size(), _numWindows, size);
+      RCLCPP_INFO(this->get_logger(), 
+                  "seeLaser() Configure for Windows \n ScanSize: %i\n NºWindows:%i \n WindowsSize: %f", msg->ranges.size(), _numWindows, size);
       _currentView.clear();
 
       // Lista de vectores
-      std::vector<float> subVec[_numWindows];
+      // std::vector<float> subVec[_numWindows];
       // std::vector<std::vector<float>> subVetors;
 
       for (int kWindow = 0; kWindow < _numWindows; ++kWindow)
@@ -198,21 +139,30 @@ public:
          auto startW_ptr = std::next(msg->ranges.cbegin(), kWindow * size);
          auto endW_ptr = std::next(msg->ranges.cbegin(), kWindow * size + size);
 
-         // allocate memory for the sub-vector
-         subVec[kWindow].resize(size);
 
          // code to handle the last sub-vector as it might
          // contain less elements
-         if (kWindow * size + size > msg->ranges.size()-1)
+         // allocate memory for the sub-vector
+         std::vector<float> subVec(size);
+         if (kWindow * size + size > msg->ranges.size())
          {
-            RCLCPP_DEBUG(this->get_logger(), "seeLaser() Exceding scan Range");
+            RCLCPP_INFO(this->get_logger(), 
+                        "seeLaser() Exceding scan Range");
             endW_ptr = msg->ranges.cend();
-            subVec[kWindow].resize(msg->ranges.size() - kWindow * size);
+            auto newSize = static_cast<float>(msg->ranges.size() - kWindow * size);
+            if(newSize <= 0) {kWindow=_numWindows; continue;}
+
+            RCLCPP_INFO(this->get_logger(), 
+                        "seeLaser() Configure for Windows SubPathSize: %f",newSize);
+            subVec.resize(newSize);
          }
 
+
          // copy elements from the input range to the sub-vector
-         std::copy(startW_ptr, endW_ptr, subVec[kWindow].begin());
-         // for (std::vector<float>::const_iterator i = subVec[kWindow].begin(); i != subVec[kWindow].end(); ++i)
+         std::copy(startW_ptr, endW_ptr, subVec.begin());
+         if(subVec.empty()) continue;
+
+         // for (std::vector<float>::const_iterator i = subVec.begin(); i != subVec.end(); ++i)
          //    {
          //       std::cout << *i << ' ';
          //    }
@@ -225,30 +175,37 @@ public:
          { 
             _currentView.push_back(-1);
             // Check Collision
-            if (wDistmin <= _colision_dist){
+            if (wDistmin <= _colision_dist)
+            {
                _colisions++;
                RCLCPP_INFO(this->get_logger(), "seeLaser() TotalColision: %d", _colisions);   
-               RCLCPP_INFO(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ", kWindow, wDistmin, _currentView.back());
+               RCLCPP_INFO(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
+                              kWindow, 
+                              wDistmin,
+                              _currentView.back());
             } 
 
-         }else
-          _currentView.push_back(1);
+         }else 
+            _currentView.push_back(1);
 
-         RCLCPP_DEBUG(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ", kWindow, wDistmin, _currentView.back());
+         RCLCPP_DEBUG(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ", 
+                        kWindow, 
+                        wDistmin, 
+                        _currentView.back());
       }
-      auto sum_of_elems = std::accumulate(_currentView.begin(), _currentView.end(), 0.0);
-      RCLCPP_DEBUG(this->get_logger(), "seeLaser() WindowsFlagsSum is %f", sum_of_elems);
+      auto sum_of_elems =  std::accumulate(_currentView.begin(), _currentView.end(), 0.0);
+      RCLCPP_INFO(this->get_logger(), "seeLaser() WindowsFlags Values \n--->WindowsFlagsSum: %f \n--->WindowsFlagsSize: %zu", 
+                     sum_of_elems,
+                     _currentView.size());
 
       _last_scan_stamp = _current_scan_stamp;
          // avoidObstacle();
       // if (sum_of_elems < 5)
       // else
-         sendDirection();
+         // sendDirection();
    }
 
-
-
-   void avoidObstacle()
+   void Follow::avoidObstacle()
    {
       RCLCPP_INFO(this->get_logger(), "avoidObstacle() -");
 
@@ -294,7 +251,7 @@ public:
       _cmd_pub->publish(std::move(cmd_msg));
    }
 
-   void sendDirection()
+   void Follow::sendDirection()
    {
       RCLCPP_INFO(this->get_logger(), "sendDirection() -");
       auto middle_ptr = _currentView.begin() + (_currentView.size() / 2);
@@ -348,39 +305,6 @@ public:
       _cmd_pub->publish(std::move(cmd_msg));
    }
 
-  
-   /// Laser messages subscriber
-   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr _laser_sub;
-
-   /// Velocity command publisher
-   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr _cmd_pub;
-
-   /// Minimum allowed distance from target
-   float _min_dist = 0.7;
-   float _colision_dist = 0.2;
-   _Float32 _radToAngle = 360.0 / (2 * PI);
-   _Float32 _kv = 0.8;
-   _Float32 _ksigma = 0.4;
-
-   rclcpp::Time _current_scan_stamp;
-   rclcpp::Time _last_scan_stamp;
-   rclcpp::Time _last_time_stamp;
-   // Regions _currentView;
-   std::vector<float> _currentView;
-   int _numWindows;
-
-   bool _start_measuring = false;
-   double _scanLaten;
-   double _timeLaten;
-
-   double _min_freq = 9.0;
-   double _max_freq = 11.0;
-   double _freq_tolerance = 0.1;
-   double _window_size = 100;
-   double _min_acceptable = 0.05;
-   double _max_acceptable = 0.15;
-   int    _colisions = 0;
-};
 
 int main(int argc, char *argv[])
 {
