@@ -31,7 +31,7 @@ class Follow : public rclcpp::Node
       Follow();
 
       //----- CALLBACK'S -----//
-      void onSensorMsg(const sensor_msgs::msg::LaserScan::SharedPtr);
+      // void onSensorMsg(const sensor_msgs::msg::LaserScan::SharedPtr);
       void seeLaser(const sensor_msgs::msg::LaserScan::SharedPtr);
       
    private:
@@ -39,6 +39,12 @@ class Follow : public rclcpp::Node
       void avoidObstacle();
       void sendDirection();
 
+      //----- Logs Time Functions ----///
+      void logCmdLatency();
+      void logScanLatency();
+
+      //----- Help Functions ----///
+      void plotVector(std::vector<float> *);
 
     /// Laser messages subscriber
    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr _laser_sub;
@@ -50,20 +56,25 @@ class Follow : public rclcpp::Node
    float _min_dist = 0.7;
    float _colision_dist = 0.2;
    // Constant Controler Values
-   const _Float32 _kv = 0.8;
+   const _Float32 _kv = 0.5;
    const _Float32 _ksigma = 0.4;
    const _Float32 _radToAngle = 360.0 / (2 * PI);
 
-   rclcpp::Time _current_scan_stamp;
+   // Simultation Stamp
    rclcpp::Time _last_scan_stamp;
-   rclcpp::Time _last_time_stamp;
+   double _scanLaten;
+
+   // System TimeStamp
+   rclcpp::Time _lastCmdStamp;
+   rclcpp::Time _lastScanStamp;
+   double _cmdLaten;
+
+
    int    _colisions = 0;
    // 
    std::vector<float> _currentView;
-   int _numWindows = 22; // ¿ToDo? Comprobar que no exede range scan
+   int _numWindows = 41; // ¿ToDo? Comprobar que no exede range scan
 
-   double _scanLaten;
-   double _timeLaten;
    bool _start_measuring = false; //Variable de mierda de primer CallBack
 
    //- Vbles para real time logging
