@@ -51,6 +51,7 @@ class Follow : public rclcpp::Node
 
    /// Velocity command publisher
    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr _cmd_pub;
+   rclcpp::TimerBase::SharedPtr _publishTimer;
 
    /// Minimum allowed distance from target
    float _min_dist = 0.7;
@@ -71,9 +72,12 @@ class Follow : public rclcpp::Node
 
 
    int    _colisions = 0;
-   // 
+   /*----   Filered View   ----*/
    std::vector<float> _currentView;
+   std::vector<float> _controllerView;
    int _numWindows = 41; // ¿ToDo? Comprobar que no exede range scan
+   std::mutex _mtx;   //Protected mutex for vector
+
 
    bool _start_measuring = false; //Variable de mierda de primer CallBack
 

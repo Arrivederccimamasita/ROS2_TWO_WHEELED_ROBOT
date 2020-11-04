@@ -22,6 +22,9 @@ Follow::Follow() : Node("follow")
    
    _cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 
                                                                   default_qos);
+
+   _publishTimer = this->create_wall_timer(std::chrono::milliseconds(1000),
+                                    std::bind(&Follow::sendDirection, this));                                                                  
 }
 
 void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -31,22 +34,22 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
 
    /*----   Log time reception   ----*/
    logScanLatency();
+   //ToDo
+   // if (_last_scan_stamp.seconds()) 
+   // {
+   //    auto currentMsgStamp    =  msg->header.stamp;
+   //    auto updateSensorRate   = currentMsgStamp.nanosec - _last_scan_stamp.nanoseconds();
+   //    RCLCPP_INFO (this->get_logger(), 
+   //             "seeLaser() ScanMsgLatency: %d ScancurrentNanoSec: %ld", updateSensorRate, currentMsgStamp.nanosec);
 
-   if (_last_scan_stamp.seconds()) 
-   {
-      auto currentMsgStamp    =  msg->header.stamp;
-      auto updateSensorRate   = currentMsgStamp.nanosec - _last_scan_stamp.nanoseconds();
-      RCLCPP_INFO (this->get_logger(), 
-               "seeLaser() ScanMsgLatency: %d ScancurrentNanoSec: %ld", updateSensorRate, currentMsgStamp.nanosec);
-
-   }                 
+   // }                 
    _last_scan_stamp = msg->header.stamp;
 
 
    /*----   Filter Laser to currentView   ----*/
    // Fragmenta el rango de laser entre los valores del current view y haya minimos
    auto size =ceil(double(msg->ranges.size()) / double(_numWindows));
-   RCLCPP_INFO(this->get_logger(), 
+   RCLCPP_DEBUG(this->get_logger(), 
                "seeLaser() Configure for Windows \n ScanSize: %i\n NºWindows:%i \n WindowsSize: %f",
                msg->ranges.size(), 
                _numWindows, size);
@@ -66,13 +69,13 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
       /*----   Check if exceding laser range ----*/
       if (kWindow * size + size > msg->ranges.size())
       {
-         RCLCPP_INFO(this->get_logger(), 
+         RCLCPP_DEBUG(this->get_logger(), 
                      "seeLaser() Exceding scan Range");
          endW_ptr = msg->ranges.cend();
          auto newSize = static_cast<float>(msg->ranges.size() - kWindow * size);
          if(newSize <= 0) {kWindow=_numWindows; continue;} //Supera tamaño de laserScan 
 
-         RCLCPP_INFO(this->get_logger(), 
+         RCLCPP_DEBUG(this->get_logger(), 
                      "seeLaser() Configure for Windows SubPathSize: %f",newSize);
 
          subVec.resize(newSize);
@@ -112,10 +115,14 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
    // RCLCPP_INFO(this->get_logger(), "seeLaser() WindowsFlags Values \n--->WindowsFlagsSum: %f \n--->WindowsFlagsSize: %zu", 
    //                sum_of_elems,
    //                _currentView.size());
+
+   RCLCPP_INFO(this->get_logger(), "seeLaser() Filtered Range:");
+   plotVector(&pathView);
+
+   _mtx.lock();
    _currentView.clear(); // Attention!!!
-   // std::copy(pathView.begin(), pathView.end(), _currentView.begin());
    _currentView = pathView;
-   sendDirection();
+   _mtx.unlock();
 }
 
 void Follow::avoidObstacle()
@@ -154,16 +161,29 @@ void Follow::avoidObstacle()
 
 void Follow::sendDirection()
 {
-   RCLCPP_INFO(this->get_logger(), "sendDirection()...");
 
    auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
    
 
    /*----   (ToDo)Take current Vision  ----*/ 
-   plotVector(&_currentView);
+   
+   _mtx.lock();
+   if(_currentView.empty())
+   {
+      _mtx.unlock();
+      return;
+   }
+   
+   _controllerView  = _currentView;
+   _mtx.unlock();
+   
+   RCLCPP_INFO(this->get_logger(), "sendDirection()...");
+
+   RCLCPP_INFO(this->get_logger(), "sendDirection() Current View:");
+   plotVector(&_controllerView);
    /*----   Default Acction ---------------*/
-   auto sum_of_elems =  std::accumulate(_currentView.begin(), _currentView.end(), 0.0);
-   if (sum_of_elems == _currentView.size())
+   auto sum_of_elems =  std::accumulate(_controllerView.begin(), _controllerView.end(), 0.0);
+   if (sum_of_elems == _controllerView.size())
    {
       RCLCPP_INFO(this->get_logger(), "sendDirection() Clear View...");
 
@@ -180,14 +200,14 @@ void Follow::sendDirection()
    }
 
    /*----     */
-   auto middle_ptr = _currentView.begin() + (_currentView.size() / 2);
+   auto middle_ptr = _controllerView.begin() + (_controllerView.size() / 2);
    float angular_dir = 0.0;
    float lineal_dir = *middle_ptr;
 
    RCLCPP_DEBUG(this->get_logger(), "Front Flag = %f",
                   *middle_ptr);
 
-   for (auto it = _currentView.begin(); it != _currentView.end(); it++)
+   for (auto it = _controllerView.begin(); it != _controllerView.end(); it++)
    {
       auto PropDivision = static_cast<float>(std::distance(middle_ptr, it));
 
@@ -254,7 +274,7 @@ void Follow::logScanLatency()
 
 void Follow::plotVector(std::vector<float> *vec)
 {
-   RCLCPP_INFO(this->get_logger(), "plotVector()...");
+   RCLCPP_DEBUG(this->get_logger(), "plotVector()...");
    for (std::vector<float>::const_iterator i = vec->begin(); i != vec->end(); ++i)
    {
       std::cout << *i << ' ';
