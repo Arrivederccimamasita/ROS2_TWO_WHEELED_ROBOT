@@ -25,6 +25,12 @@ struct Regions
    float left;
 };
 
+struct Vision 
+{
+   std::vector<float> filteredView;
+   bool  colision;
+};   
+
 class Follow : public rclcpp::Node
 {
    public:
@@ -57,7 +63,7 @@ class Follow : public rclcpp::Node
    float _min_dist = 0.7;
    float _colision_dist = 0.2;
    // Constant Controler Values
-   const _Float32 _kv = 0.5;
+   const _Float32 _velMax = 0.5;
    const _Float32 _ksigma = 0.4;
    const _Float32 _radToAngle = 360.0 / (2 * PI);
 
@@ -71,8 +77,11 @@ class Follow : public rclcpp::Node
    double _cmdLaten;
 
 
-   int    _colisions = 0;
+   int    _colisions    = 0;
+   bool   _newColision  = false;
+  
    /*----   Filered View   ----*/
+   Vision _currVision;
    std::vector<float> _currentView;
    std::vector<float> _controllerView;
    int _numWindows = 41; // ¿ToDo? Comprobar que no exede range scan
