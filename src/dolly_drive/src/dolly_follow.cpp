@@ -15,6 +15,7 @@ Follow::Follow() : Node("follow")
    /*----   Config Topic's ----*/
 
    _currentView.reserve(_numWindows);
+   _currVision.filteredView.reserve(_numWindows);
 
    _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
                                                                         sensorDtaQoS,
@@ -61,8 +62,8 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
    for (int kWindow = 0; kWindow < _numWindows; ++kWindow)
    {
       /*----   Windows Pointers              ----*/
-      auto startW_ptr = std::next(msg->ranges.cbegin(), kWindow * size);
-      auto endW_ptr = std::next(msg->ranges.cbegin(), kWindow * size + size);
+      auto startW_ptr   = std::next(msg->ranges.cbegin(), kWindow * size);
+      auto endW_ptr     = std::next(msg->ranges.cbegin(), kWindow * size + size);
 
 
       std::vector<float> subVec(size);
@@ -95,13 +96,16 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
          
          if (wDistmin <= _colision_dist)  // Check Collision
          {
-            _colisions++;
-            RCLCPP_INFO(this->get_logger(), "seeLaser() TotalColision: %d", _colisions);   
+            _mtx.lock();
+            _newColision = true;
             RCLCPP_INFO(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
                            kWindow, 
                            wDistmin,
                            pathView.back());
-         } 
+            
+
+            _mtx.unlock();
+         }
 
       }else 
          pathView.push_back(1);
@@ -116,12 +120,16 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
    //                sum_of_elems,
    //                _currentView.size());
 
-   RCLCPP_INFO(this->get_logger(), "seeLaser() Filtered Range:");
-   plotVector(&pathView);
+   // RCLCPP_INFO(this->get_logger(), "seeLaser() Filtered Range:");
+   // plotVector(&pathView);
 
    _mtx.lock();
+   if (_newColision) _colisions++;
+   RCLCPP_INFO(this->get_logger(), "seeLaser() TotalColision: %d", _colisions);   
    _currentView.clear(); // Attention!!!
+   _currVision.filteredView.clear();
    _currentView = pathView;
+   _currVision.filteredView = pathView;
    _mtx.unlock();
 }
 
@@ -147,7 +155,7 @@ void Follow::avoidObstacle()
    }
 
    auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-   cmd_msg->linear.x = _kv * lineal_dir;
+   cmd_msg->linear.x = _velMax * lineal_dir;
    cmd_msg->angular.z = _ksigma * angular_dir;
 
    RCLCPP_INFO(this->get_logger(), "avoidObstacle() CMD: Angular = %f Lineal = %f",
@@ -160,34 +168,32 @@ void Follow::avoidObstacle()
 }
 
 void Follow::sendDirection()
-{
+{ 
 
-   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-   
-
-   /*----   (ToDo)Take current Vision  ----*/ 
-   
+   /*----   Take current Vision  ----*/    
    _mtx.lock();
    if(_currentView.empty())
    {
       _mtx.unlock();
       return;
    }
-   
-   _controllerView  = _currentView;
-   _mtx.unlock();
-   
    RCLCPP_INFO(this->get_logger(), "sendDirection()...");
+   auto controllerView  = _currVision.filteredView;
+   _mtx.unlock();
 
-   RCLCPP_INFO(this->get_logger(), "sendDirection() Current View:");
-   plotVector(&_controllerView);
+   // plotVector(&controllerView);
+   
+   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
+   
+   auto sum_of_elems =  std::accumulate(controllerView.begin(), controllerView.end(), 0.0);
+
    /*----   Default Acction ---------------*/
-   auto sum_of_elems =  std::accumulate(_controllerView.begin(), _controllerView.end(), 0.0);
-   if (sum_of_elems == _controllerView.size())
+   if (sum_of_elems == controllerView.size())
    {
+
       RCLCPP_INFO(this->get_logger(), "sendDirection() Clear View...");
 
-      cmd_msg->linear.x    = _kv * 1.5;
+      cmd_msg->linear.x    = _velMax * 1.5;
       cmd_msg->angular.z   = 0;
 
       RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
@@ -196,22 +202,25 @@ void Follow::sendDirection()
 
       _cmd_pub->publish(std::move(cmd_msg));
       logCmdLatency();
+      _mtx.lock(); 
+      _newColision  = false;
+      _mtx.unlock();
       return;
    }
 
    /*----     */
-   auto middle_ptr = _controllerView.begin() + (_controllerView.size() / 2);
+   auto middle_ptr = controllerView.begin() + (controllerView.size() / 2);
    float angular_dir = 0.0;
    float lineal_dir = *middle_ptr;
 
    RCLCPP_DEBUG(this->get_logger(), "Front Flag = %f",
                   *middle_ptr);
 
-   for (auto it = _controllerView.begin(); it != _controllerView.end(); it++)
+   for (auto it = controllerView.begin(); it != controllerView.end(); it++)
    {
       auto PropDivision = static_cast<float>(std::distance(middle_ptr, it));
 
-      // RCLCPP_INFO(this->get_logger(),"PropDivision = %f Value = %f ",
+      // RCLCPP_DEBUG(this->get_logger(),"PropDivision = %f Value = %f ",
       //    PropDivision, *it);
       if (it != middle_ptr && *it>0)
       {
@@ -220,16 +229,18 @@ void Follow::sendDirection()
    }
 
    /*----   Replace direcction due to Null vision  ----*/
-   if ( !angular_dir && !lineal_dir)
+   _mtx.lock();
+   if ( (!angular_dir && !lineal_dir) || _currentView.colision )
    {
-      angular_dir = _kv;
-      lineal_dir = -_kv;
-      RCLCPP_INFO(this->get_logger(),"Go Back...");
+      angular_dir =  _velMax   *0.7;
+      lineal_dir  = 0;
+      RCLCPP_INFO(this->get_logger(),"TURNING...");
       // Loggear momento critico
    }
+   _mtx.unlock();
 
    /*----   Assign Values into command             ----*/
-   cmd_msg->linear.x = _kv * lineal_dir;
+   cmd_msg->linear.x =  _velMax * lineal_dir;
    cmd_msg->angular.z = _ksigma * angular_dir;
    RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
                cmd_msg->angular.z,
