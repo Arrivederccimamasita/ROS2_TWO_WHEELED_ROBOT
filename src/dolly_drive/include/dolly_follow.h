@@ -14,9 +14,11 @@
 #include <numeric>
 #include <math.h>
 #include <time.h>
-#include <chrono>
-#define PI 3.14159265
+#include <iostream>
+#include <cstdio>
 
+#define PI 3.14159265
+using namespace std;
 struct Regions
 {
    float right;
@@ -31,6 +33,7 @@ struct Vision
    std::vector<float> filteredView;
    int   sumView;
    bool  colision;
+   int   wColision;
 };   
 
 class Follow : public rclcpp::Node
@@ -62,12 +65,10 @@ class Follow : public rclcpp::Node
    rclcpp::TimerBase::SharedPtr _publishTimer;
 
    /// Minimum allowed distance from target
-   float _min_dist = 0.7;
-   float _colision_dist = 0.2;
+   float _min_dist;
+   float _colision_dist;
    // Constant Controler Values
    const _Float32 _velMax = 0.5;
-   const _Float32 _ksigma = 0.4;
-   const _Float32 _radToAngle = 360.0 / (2 * PI);
 
    // Simultation Stamp
    rclcpp::Time _last_scan_stamp;

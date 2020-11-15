@@ -5,6 +5,9 @@
 
 Follow::Follow() : Node("follow")
 {
+   //Configure Logger
+
+   freopen("output.txt", "w", stdout);
 
    // Quality of service
    auto default_qos  = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
@@ -14,11 +17,13 @@ Follow::Follow() : Node("follow")
 
    /*----   Config Topic's ----*/
    _currVision.filteredView.reserve(_numWindows);
-   _timeOn     =  false;
-   _numWindows =  41;
+   _newColision   =  false;
+   _timeOn        =  false;
+   _numWindows    =  41;
+   _colisions     =  0;
 
-   _colisions    = 0;
-   _newColision  = false;
+   _min_dist      =  0.7;
+   _colision_dist =  0.2;
 
    _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
                                                                         sensorDtaQoS,
@@ -87,7 +92,8 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
          if (wDistmin <= _colision_dist)  // Check Collision
          {
             _mtx.lock();
-            _currVision.colision=true;   // Indica al Controlador temporizado de que inicie Giro
+            _currVision.colision  = true;   // Indica al Controlador temporizado de que inicie Giro
+            _currVision.wColision = kWindow;
             _mtx.unlock();
             newColision = true;
             RCLCPP_INFO(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
@@ -128,10 +134,13 @@ void Follow::sendDirection()
    _mtx.lock();
    if (_currVision.colision)
    {
+      auto signe = (_currVision.wColision > _currVision.filteredView.size()/2) ? -1 : 1;
       _mtx.unlock();
       RCLCPP_INFO(this->get_logger(),"sendDirection() TURNING...");
       auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_msg->angular.z   = _velMax * 0.7;
+      cmd_msg->angular.z   = signe * _velMax * 0.7;
+      RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = 0",
+            cmd_msg->angular.z);
       _cmd_pub->publish(std::move(cmd_msg));
       logCmdLatency();
       return;
@@ -176,7 +185,7 @@ void Follow::sendDirection()
    RCLCPP_INFO(this->get_logger(), "sendDirection() DEFAULT...");
    auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
    cmd_msg->linear.x =  _velMax * lineal_dir;
-   cmd_msg->angular.z = _ksigma * angular_dir;
+   cmd_msg->angular.z = _velMax * angular_dir;
    RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
                cmd_msg->angular.z,
                cmd_msg->linear.x);
@@ -196,7 +205,7 @@ void Follow::logCmdLatency()
 
       _cmdLaten = (rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds() - _lastCmdStamp.nanoseconds())/1e9;
       // auto ratio  = double(_scanLaten)/double(_cmdLaten);
-      RCLCPP_INFO(this->get_logger(), 
+      RCLCPP_DEBUG(this->get_logger(), 
                   "logCmdLatency() Time Measurement \nCmd Latency: %f", _cmdLaten);
    }
    _lastCmdStamp  = rclcpp::Clock(RCL_SYSTEM_TIME).now();
@@ -212,12 +221,11 @@ void Follow::logScanLatency()
                   rclcpp::Clock(RCL_ROS_TIME).now().nanoseconds()/1e9);
 
       _scanLaten = (rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds() - _lastScanStamp.nanoseconds())/1e9;
-      RCLCPP_INFO(this->get_logger(), 
+      RCLCPP_DEBUG(this->get_logger(), 
                   "logScanLatency() Time Measurement \nScan Latency: %f", _scanLaten);
    }
    _lastScanStamp  = rclcpp::Clock(RCL_SYSTEM_TIME).now();
 }
-
 
 void Follow::colisionTimer(int mode)
 {
@@ -235,10 +243,10 @@ void Follow::colisionTimer(int mode)
       RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision DOWN...");
       _timeOn      =    false;
       _colisionEnd =    rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
-      RCLCPP_INFO(this->get_logger(), "Time difference = %f [µs]", _colisionEnd - _colisionInit);
+      RCLCPP_INFO(this->get_logger(), "Time difference = %f [s]", _colisionEnd - _colisionInit);
+      cout << "" << _colisionEnd - _colisionInit << endl;
    }
 }
-
 
 void Follow::plotVector(std::vector<float> *vec)
 {
