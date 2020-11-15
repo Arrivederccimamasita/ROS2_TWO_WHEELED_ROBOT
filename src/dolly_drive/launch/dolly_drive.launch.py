@@ -15,26 +15,26 @@
 """Launch Gazebo with a world that has Dolly, as well as the follow node."""
 
 import os
-from ament_index_python.packages import get_package_share_directory
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.actions import IncludeLaunchDescription
-from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
-from launch_ros.actions import ComposableNodeContainer
-from launch_ros.descriptions import ComposableNode
+from ament_index_python.packages        import get_package_share_directory
+from launch                             import LaunchDescription
+from launch.actions                     import DeclareLaunchArgument
+from launch.actions                     import IncludeLaunchDescription
+from launch.conditions                  import IfCondition
+from launch.launch_description_sources  import PythonLaunchDescriptionSource
+from launch.substitutions               import LaunchConfiguration
+from launch_ros.actions                 import Node
+from launch_ros.actions                 import ComposableNodeContainer
+from launch_ros.descriptions            import ComposableNode
 
 cmd_topic_name="/simu/cmd"
 scan_topic_name="/simu/scan"
-TOPIC_LIST_SIZE=1
-node_name='follower'
+TOPIC_LIST_SIZE=3
+node_name="follower"
 
-def iterate_topic_name(init_name):
+def iterate_topic_name(base_name):
     topic_list=[]
     for i in range(TOPIC_LIST_SIZE):
-        crr_name=init_name+'_'+str(i+1)
+        crr_name=base_name+str(i+1)
         topic_list.append(crr_name)
 
     return topic_list
@@ -46,9 +46,10 @@ def generate_launch_description():
 
     ld = LaunchDescription()
 
-    scan_topic_list=iterate_topic_name(scan_topic_name)
-    cmd_topic_list=iterate_topic_name(cmd_topic_name)
-    
+    scan_topic_list =   iterate_topic_name(scan_topic_name)
+    cmd_topic_list  =   iterate_topic_name(cmd_topic_name)
+    node_name_list  =   iterate_topic_name(node_name)
+
     lenght=len(scan_topic_list)
     if lenght==1:
         scan_topic_list=["/simu/scan"]
@@ -56,9 +57,10 @@ def generate_launch_description():
     for i in range(lenght): 
         follow = Node(
             package='planner',
-            name=node_name,
+            name=node_name_list[i],
             node_executable='dolly_planner',                
             remappings=[
+                ('follow', node_name_list[i]),
                 ('cmd_vel', cmd_topic_list[i]),
                 ('laser_scan', scan_topic_list[i])],
             output='screen',        

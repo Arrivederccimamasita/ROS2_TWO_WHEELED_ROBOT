@@ -14,6 +14,7 @@
 #include <numeric>
 #include <math.h>
 #include <time.h>
+#include <chrono>
 #define PI 3.14159265
 
 struct Regions
@@ -28,6 +29,7 @@ struct Regions
 struct Vision 
 {
    std::vector<float> filteredView;
+   int   sumView;
    bool  colision;
 };   
 
@@ -42,12 +44,12 @@ class Follow : public rclcpp::Node
       
    private:
       //----- Functios Vel_cmd Sender -----// 
-      void avoidObstacle();
       void sendDirection();
 
       //----- Logs Time Functions ----///
       void logCmdLatency();
       void logScanLatency();
+      void colisionTimer(int mode);
 
       //----- Help Functions ----///
       void plotVector(std::vector<float> *);
@@ -70,31 +72,18 @@ class Follow : public rclcpp::Node
    // Simultation Stamp
    rclcpp::Time _last_scan_stamp;
    double _scanLaten;
-
+   double _colisionInit, _colisionEnd;     
+   bool _timeOn;
    // System TimeStamp
    rclcpp::Time _lastCmdStamp;
    rclcpp::Time _lastScanStamp;
    double _cmdLaten;
 
-
-   int    _colisions    = 0;
-   bool   _newColision  = false;
+   int    _colisions;
+   bool   _newColision;
   
    /*----   Filered View   ----*/
    Vision _currVision;
-   std::vector<float> _currentView;
-   std::vector<float> _controllerView;
-   int _numWindows = 41; // ¿ToDo? Comprobar que no exede range scan
+   int _numWindows; // ¿ToDo? Comprobar que no exede range scan
    std::mutex _mtx;   //Protected mutex for vector
-
-
-   bool _start_measuring = false; //Variable de mierda de primer CallBack
-
-   //- Vbles para real time logging
-   // double _min_freq = 9.0;
-   // double _max_freq = 11.0;
-   // double _freq_tolerance = 0.1;
-   // double _window_size = 100;
-   // double _min_acceptable = 0.05;
-   // double _max_acceptable = 0.15;
 };

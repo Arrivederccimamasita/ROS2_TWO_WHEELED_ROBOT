@@ -13,9 +13,12 @@ Follow::Follow() : Node("follow")
 
 
    /*----   Config Topic's ----*/
-
-   _currentView.reserve(_numWindows);
    _currVision.filteredView.reserve(_numWindows);
+   _timeOn     =  false;
+   _numWindows =  41;
+
+   _colisions    = 0;
+   _newColision  = false;
 
    _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
                                                                         sensorDtaQoS,
@@ -34,59 +37,46 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
                "CALLBACK:seeLaser...");
 
    /*----   Log time reception   ----*/
-   logScanLatency();
-   //ToDo
-   // if (_last_scan_stamp.seconds()) 
-   // {
-   //    auto currentMsgStamp    =  msg->header.stamp;
-   //    auto updateSensorRate   = currentMsgStamp.nanosec - _last_scan_stamp.nanoseconds();
-   //    RCLCPP_INFO (this->get_logger(), 
-   //             "seeLaser() ScanMsgLatency: %d ScancurrentNanoSec: %ld", updateSensorRate, currentMsgStamp.nanosec);
-
-   // }                 
+   logScanLatency();             
    _last_scan_stamp = msg->header.stamp;
 
 
    /*----   Filter Laser to currentView   ----*/
    // Fragmenta el rango de laser entre los valores del current view y haya minimos
-   auto size =ceil(double(msg->ranges.size()) / double(_numWindows));
+   auto size = ceil(double(msg->ranges.size()) / double(_numWindows));
    RCLCPP_DEBUG(this->get_logger(), 
                "seeLaser() Configure for Windows \n ScanSize: %i\n NºWindows:%i \n WindowsSize: %f",
                msg->ranges.size(), 
                _numWindows, size);
-
-
   
-   std::vector<float>pathView;
+   std::vector<float> pathView;
    pathView.reserve(_numWindows);
+   auto newColision = false;
    for (int kWindow = 0; kWindow < _numWindows; ++kWindow)
    {
       /*----   Windows Pointers              ----*/
       auto startW_ptr   = std::next(msg->ranges.cbegin(), kWindow * size);
       auto endW_ptr     = std::next(msg->ranges.cbegin(), kWindow * size + size);
-
-
       std::vector<float> subVec(size);
+ 
       /*----   Check if exceding laser range ----*/
       if (kWindow * size + size > msg->ranges.size())
       {
-         RCLCPP_DEBUG(this->get_logger(), 
-                     "seeLaser() Exceding scan Range");
          endW_ptr = msg->ranges.cend();
          auto newSize = static_cast<float>(msg->ranges.size() - kWindow * size);
-         if(newSize <= 0) {kWindow=_numWindows; continue;} //Supera tamaño de laserScan 
+         RCLCPP_DEBUG(this->get_logger(), 
+                     "seeLaser() Exceding scan Range");
 
+         if(newSize <= 0) {kWindow=_numWindows; continue;} //Supera tamaño de laserScan 
          RCLCPP_DEBUG(this->get_logger(), 
                      "seeLaser() Configure for Windows SubPathSize: %f",newSize);
 
          subVec.resize(newSize);
       }
       
-
       /*----   Take range of Window          ----*/
       std::copy(startW_ptr, endW_ptr, subVec.begin());
       if(subVec.empty()) continue; //Ingnore if finish laser values
-      // plotVector(&subVec);
 
       /*----   Set Flag for min Value        ----*/
       auto wDistmin  =  *std::min_element(startW_ptr, endW_ptr);
@@ -97,157 +87,102 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
          if (wDistmin <= _colision_dist)  // Check Collision
          {
             _mtx.lock();
-            _newColision = true;
+            _currVision.colision=true;   // Indica al Controlador temporizado de que inicie Giro
+            _mtx.unlock();
+            newColision = true;
             RCLCPP_INFO(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
                            kWindow, 
                            wDistmin,
-                           pathView.back());
-            
-
-            _mtx.unlock();
+                           pathView.back());         
          }
 
-      }else 
-         pathView.push_back(1);
+      }
+      else  pathView.push_back(1);
 
       RCLCPP_DEBUG(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ", 
                      kWindow, 
                      wDistmin, 
                      pathView.back());
    }
-   
-   // RCLCPP_INFO(this->get_logger(), "seeLaser() WindowsFlags Values \n--->WindowsFlagsSum: %f \n--->WindowsFlagsSize: %zu", 
-   //                sum_of_elems,
-   //                _currentView.size());
-
-   // RCLCPP_INFO(this->get_logger(), "seeLaser() Filtered Range:");
-   // plotVector(&pathView);
 
    _mtx.lock();
-   if (_newColision) _colisions++;
-   RCLCPP_INFO(this->get_logger(), "seeLaser() TotalColision: %d", _colisions);   
-   _currentView.clear(); // Attention!!!
-   _currVision.filteredView.clear();
-   _currentView = pathView;
-   _currVision.filteredView = pathView;
-   _mtx.unlock();
-}
-
-void Follow::avoidObstacle()
-{
-   RCLCPP_INFO(this->get_logger(), "avoidObstacle() -");
-
-   auto middle_ptr = _currentView.begin() + (_currentView.size() / 2);
-   float lineal_dir = *middle_ptr - 1;
-   float angular_dir = 0.0;
-   for (auto it = _currentView.begin(); it != _currentView.end(); it++)
+   if (!newColision)  //Desactiva Indicador Colision si no hay nueva colision
    {
-      auto PropDivision = static_cast<float>(std::distance(middle_ptr, it));
-
-      // RCLCPP_INFO(this->get_logger(),"PropDivision = %f Value = %f ",
-      //    PropDivision, *it);
-      if (it != middle_ptr)
-      {
-         angular_dir += *it * (1. / PropDivision);
-         if (*it < 0)
-            lineal_dir -= abs(PropDivision) / 10;
-      }
-   }
-
-   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-   cmd_msg->linear.x = _velMax * lineal_dir;
-   cmd_msg->angular.z = _ksigma * angular_dir;
-
-   RCLCPP_INFO(this->get_logger(), "avoidObstacle() CMD: Angular = %f Lineal = %f",
-               cmd_msg->angular.z,
-               cmd_msg->linear.x);
-
-   logCmdLatency();
-
-   _cmd_pub->publish(std::move(cmd_msg));
+   _currVision.colision = false;
+   colisionTimer(0);
+   _currVision.filteredView.clear();
+   _currVision.filteredView = pathView;
+   _currVision.sumView = std::accumulate(pathView.begin(), pathView.end(), 0.0);
+   }   
+   else 
+   {
+      colisionTimer(1);
+      _colisions++;
+   }  
+   _mtx.unlock();
 }
 
 void Follow::sendDirection()
 { 
-
-   /*----   Take current Vision  ----*/    
+   /*----            Action for colision           ----*/    
    _mtx.lock();
-   if(_currentView.empty())
+   if (_currVision.colision)
    {
       _mtx.unlock();
-      return;
-   }
-   RCLCPP_INFO(this->get_logger(), "sendDirection()...");
-   auto controllerView  = _currVision.filteredView;
-   _mtx.unlock();
-
-   // plotVector(&controllerView);
-   
-   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-   
-   auto sum_of_elems =  std::accumulate(controllerView.begin(), controllerView.end(), 0.0);
-
-   /*----   Default Acction ---------------*/
-   if (sum_of_elems == controllerView.size())
-   {
-
-      RCLCPP_INFO(this->get_logger(), "sendDirection() Clear View...");
-
-      cmd_msg->linear.x    = _velMax * 1.5;
-      cmd_msg->angular.z   = 0;
-
-      RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
-                  cmd_msg->angular.z,
-                  cmd_msg->linear.x);
-
+      RCLCPP_INFO(this->get_logger(),"sendDirection() TURNING...");
+      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
+      cmd_msg->angular.z   = _velMax * 0.7;
       _cmd_pub->publish(std::move(cmd_msg));
       logCmdLatency();
-      _mtx.lock(); 
-      _newColision  = false;
-      _mtx.unlock();
       return;
    }
 
-   /*----     */
-   auto middle_ptr = controllerView.begin() + (controllerView.size() / 2);
+   /*----          Take current Vision             ----*/
+   Vision controllerView  = _currVision;
+   _mtx.unlock();
+   if(controllerView.filteredView.empty()) return;
+
+   /*----         Action due to Null vision        ----*/
+   if (controllerView.sumView == 0) //BLINDED
+   {
+      RCLCPP_INFO(this->get_logger(), "sendDirection() BLIND...");
+
+      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
+      cmd_msg->linear.x    = -_velMax * 0.1;
+      cmd_msg->angular.z   = _velMax * 0.7;
+      _cmd_pub->publish(std::move(cmd_msg));
+      logCmdLatency();
+      return;
+   }
+
+   /*----            Default Acction               ----*/
+   auto middle_ptr = controllerView.filteredView.begin() + (controllerView.filteredView.size() / 2);
    float angular_dir = 0.0;
    float lineal_dir = *middle_ptr;
-
    RCLCPP_DEBUG(this->get_logger(), "Front Flag = %f",
                   *middle_ptr);
 
-   for (auto it = controllerView.begin(); it != controllerView.end(); it++)
+   for (auto it = controllerView.filteredView.begin(); it != controllerView.filteredView.end(); it++)
    {
       auto PropDivision = static_cast<float>(std::distance(middle_ptr, it));
 
-      // RCLCPP_DEBUG(this->get_logger(),"PropDivision = %f Value = %f ",
-      //    PropDivision, *it);
       if (it != middle_ptr && *it>0)
       {
          angular_dir += *it * (1. / PropDivision);
       }
    }
 
-   /*----   Replace direcction due to Null vision  ----*/
-   _mtx.lock();
-   if ( (!angular_dir && !lineal_dir) || _currentView.colision )
-   {
-      angular_dir =  _velMax   *0.7;
-      lineal_dir  = 0;
-      RCLCPP_INFO(this->get_logger(),"TURNING...");
-      // Loggear momento critico
-   }
-   _mtx.unlock();
-
-   /*----   Assign Values into command             ----*/
+   /*----     Assign Values into command           ----*/
+   RCLCPP_INFO(this->get_logger(), "sendDirection() DEFAULT...");
+   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
    cmd_msg->linear.x =  _velMax * lineal_dir;
    cmd_msg->angular.z = _ksigma * angular_dir;
    RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
                cmd_msg->angular.z,
                cmd_msg->linear.x);
-
    _cmd_pub->publish(std::move(cmd_msg));
    logCmdLatency();
+   return;
 }
 
 void Follow::logCmdLatency()
@@ -282,6 +217,28 @@ void Follow::logScanLatency()
    }
    _lastScanStamp  = rclcpp::Clock(RCL_SYSTEM_TIME).now();
 }
+
+
+void Follow::colisionTimer(int mode)
+{
+   if (mode)
+   {
+     if(_timeOn) return;
+
+      RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision UP...");
+      _timeOn       =   true;
+      _colisionInit =   rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
+   }
+   else
+   {
+      if(!_timeOn) return;
+      RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision DOWN...");
+      _timeOn      =    false;
+      _colisionEnd =    rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
+      RCLCPP_INFO(this->get_logger(), "Time difference = %f [µs]", _colisionEnd - _colisionInit);
+   }
+}
+
 
 void Follow::plotVector(std::vector<float> *vec)
 {
