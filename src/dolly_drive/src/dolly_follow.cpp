@@ -6,14 +6,12 @@
 Follow::Follow() : Node("follow")
 {
    //Configure Logger
-
-   freopen("output.txt", "w", stdout);
+   setLogFile();
 
    // Quality of service
    auto default_qos  = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
    auto sensorDtaQoS = rclcpp::QoS(rclcpp::SensorDataQoS());
    RCLCPP_DEBUG(this->get_logger(), "DEBUG QoS"); //ToDo Control sobre el QoS establecido
-
 
    /*----   Config Topic's ----*/
    _currVision.filteredView.reserve(_numWindows);
@@ -23,7 +21,7 @@ Follow::Follow() : Node("follow")
    _colisions     =  0;
 
    _min_dist      =  0.7;
-   _colision_dist =  0.2;
+   _colision_dist =  0.27;
 
    _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
                                                                         sensorDtaQoS,
@@ -96,7 +94,7 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
             _currVision.wColision = kWindow;
             _mtx.unlock();
             newColision = true;
-            RCLCPP_INFO(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
+            RCLCPP_DEBUG(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
                            kWindow, 
                            wDistmin,
                            pathView.back());         
@@ -243,7 +241,7 @@ void Follow::colisionTimer(int mode)
       RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision DOWN...");
       _timeOn      =    false;
       _colisionEnd =    rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
-      RCLCPP_INFO(this->get_logger(), "Time difference = %f [s]", _colisionEnd - _colisionInit);
+      RCLCPP_INFO(this->get_logger(), " %f :Time difference = %f [s]",_colisionInit , _colisionEnd - _colisionInit);
       cout << "" << _colisionEnd - _colisionInit << endl;
    }
 }
@@ -256,6 +254,27 @@ void Follow::plotVector(std::vector<float> *vec)
       std::cout << *i << ' ';
    }
    std::cout << "\n";
+}
+
+const std::string Follow::currentDateTime() {
+    time_t     now = time(0);
+    struct tm  tstruct;
+    char       buf[80];
+    tstruct = *localtime(&now);
+    // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
+    // for more information about date/time format
+    strftime(buf, sizeof(buf), "_%Y-%m-%d.%X", &tstruct);
+
+    return buf;
+}
+
+void Follow::setLogFile()
+{
+   auto filedate  = currentDateTime();
+   auto pid       = getpid();
+   char mypid[6];
+   sprintf(mypid, "%d", pid);
+   freopen((mypid + filedate + ".txt").c_str(), "w", stdout);
 }
 
 int main(int argc, char *argv[])

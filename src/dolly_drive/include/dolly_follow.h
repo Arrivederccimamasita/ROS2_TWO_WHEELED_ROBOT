@@ -16,6 +16,9 @@
 #include <time.h>
 #include <iostream>
 #include <cstdio>
+#include <string>
+#include <stdio.h>
+#include <unistd.h> 
 
 #define PI 3.14159265
 using namespace std;
@@ -56,6 +59,8 @@ class Follow : public rclcpp::Node
 
       //----- Help Functions ----///
       void plotVector(std::vector<float> *);
+      const std::string currentDateTime();
+      void setLogFile();
 
     /// Laser messages subscriber
    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr _laser_sub;
