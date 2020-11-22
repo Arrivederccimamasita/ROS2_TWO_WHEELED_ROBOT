@@ -6,7 +6,7 @@
 Follow::Follow() : Node("follow")
 {
    //Configure Logger
-   setLogFile();
+   // setLogFile();
 
    // Quality of service
    auto default_qos  = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
@@ -19,8 +19,8 @@ Follow::Follow() : Node("follow")
    _timeOn        =  false;
    _numWindows    =  41;
    _colisions     =  0;
-
-   _min_dist      =  0.7;
+   _velMax        = 0.5;
+   _min_dist      =  0.5;
    _colision_dist =  0.27;
 
    _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
@@ -91,7 +91,7 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
          {
             _mtx.lock();
             _currVision.colision  = true;   // Indica al Controlador temporizado de que inicie Giro
-            _currVision.wColision = kWindow;
+            if(!_timeOn) _currVision.wColision = kWindow;
             _mtx.unlock();
             newColision = true;
             RCLCPP_DEBUG(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
@@ -162,6 +162,18 @@ void Follow::sendDirection()
       return;
    }
 
+   if (controllerView.sumView == controllerView.filteredView.size()) 
+   {
+      RCLCPP_INFO(this->get_logger(), "sendDirection() CLEAR Path...");
+
+      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
+      cmd_msg->linear.x    = _velMax;
+      cmd_msg->angular.z   = 0;
+      _cmd_pub->publish(std::move(cmd_msg));
+      logCmdLatency();
+      return;
+   }
+
    /*----            Default Acction               ----*/
    auto middle_ptr = controllerView.filteredView.begin() + (controllerView.filteredView.size() / 2);
    float angular_dir = 0.0;
@@ -171,14 +183,20 @@ void Follow::sendDirection()
 
    for (auto it = controllerView.filteredView.begin(); it != controllerView.filteredView.end(); it++)
    {
-      auto PropDivision = static_cast<float>(std::distance(middle_ptr, it));
+      auto PropDivision = static_cast<float>(std::distance(middle_ptr, it))/ (controllerView.filteredView.size()/2);
 
       if (it != middle_ptr && *it>0)
       {
-         angular_dir += *it * (1. / PropDivision);
+         angular_dir += *it * PropDivision;
+         RCLCPP_DEBUG(this->get_logger(), "sendDirection() PropDivision= %f",
+                     PropDivision);
       }
    }
-
+   if (abs(angular_dir) > _velMax ) angular_dir = (angular_dir > 0 ) ? _velMax : -_velMax ;
+   lineal_dir = (1 - abs(angular_dir));
+   RCLCPP_INFO(this->get_logger(), "sendDirection() Regule Linear Dir= %f",
+               abs(angular_dir));
+   
    /*----     Assign Values into command           ----*/
    RCLCPP_INFO(this->get_logger(), "sendDirection() DEFAULT...");
    auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
@@ -242,7 +260,7 @@ void Follow::colisionTimer(int mode)
       _timeOn      =    false;
       _colisionEnd =    rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
       RCLCPP_INFO(this->get_logger(), " %f :Time difference = %f [s]",_colisionInit , _colisionEnd - _colisionInit);
-      cout << "" << _colisionEnd - _colisionInit << endl;
+      // cout << "" << _colisionEnd - _colisionInit << endl;
    }
 }
 
@@ -263,7 +281,7 @@ const std::string Follow::currentDateTime() {
     tstruct = *localtime(&now);
     // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
     // for more information about date/time format
-    strftime(buf, sizeof(buf), "_%Y-%m-%d.%X", &tstruct);
+    strftime(buf, sizeof(buf), "_%Y-%m-%d", &tstruct);
 
     return buf;
 }

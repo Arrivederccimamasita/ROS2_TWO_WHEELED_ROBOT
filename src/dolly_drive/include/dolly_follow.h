@@ -73,7 +73,7 @@ class Follow : public rclcpp::Node
    float _min_dist;
    float _colision_dist;
    // Constant Controler Values
-   const _Float32 _velMax = 0.5;
+   float _velMax;
 
    // Simultation Stamp
    rclcpp::Time _last_scan_stamp;
