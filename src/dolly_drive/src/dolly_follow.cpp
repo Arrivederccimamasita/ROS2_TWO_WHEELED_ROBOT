@@ -5,34 +5,58 @@
 
 Follow::Follow() : Node("follow")
 {
-   //Configure Logger
-   // setLogFile();
+   RCLCPP_DEBUG(this->get_logger(),
+               "FOLLOW NODE");
+   settingInit();
 
-   // Quality of service
-   auto default_qos  = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
-   auto sensorDtaQoS = rclcpp::QoS(rclcpp::SensorDataQoS());
-   RCLCPP_DEBUG(this->get_logger(), "DEBUG QoS"); //ToDo Control sobre el QoS establecido
+   connectSubscriber();
+   connectPublisher();                                                                  
+}
 
+void Follow::settingInit()
+{
+   RCLCPP_DEBUG(this->get_logger(),
+               "settingInit()...");
+   
    /*----   Config Topic's ----*/
    _currVision.filteredView.reserve(_numWindows);
-   _newColision   =  false;
-   _timeOn        =  false;
-   _numWindows    =  41;
-   _colisions     =  0;
-   _velMax        = 0.5;
+   _numWindows    =  41;   
+   _velMax        =  0.5;
    _min_dist      =  0.5;
    _colision_dist =  0.27;
+   _colisions     =  0;
+   _newColision   =  false;
+   _timeOn        =  false;
 
-   _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("laser_scan",
-                                                                        sensorDtaQoS,
-                                                                        std::bind(&Follow::seeLaser, this, std::placeholders::_1));
-   
-   _cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 
-                                                                  default_qos);
-
-   _publishTimer = this->create_wall_timer(std::chrono::milliseconds(1000),
-                                    std::bind(&Follow::sendDirection, this));                                                                  
+   // setupOutput(); /// Comment this for terminal output
 }
+
+void Follow::connectSubscriber()
+{
+   RCLCPP_DEBUG(this->get_logger(),
+               "connectPublisher()..."); 
+   auto sensorDtaQoS = rclcpp::QoS(rclcpp::SensorDataQoS());  /// Quality of service
+   _laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
+                     "laser_scan",
+                     sensorDtaQoS,
+                     std::bind(&Follow::seeLaser, this, std::placeholders::_1)); 
+}
+
+void Follow::connectPublisher()
+{
+   RCLCPP_DEBUG(this->get_logger(),
+               "connectPublisher()..."); 
+     
+   auto default_qos  = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
+   _cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>(
+                  "cmd_vel", 
+                  default_qos);
+
+   _publishTimer = this->create_wall_timer(               /// Timed PUBLISHER
+                        std::chrono::milliseconds(1000),
+                        std::bind(&Follow::sendDirection, this)); 
+}
+
 
 void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
@@ -45,7 +69,7 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
 
 
    /*----   Filter Laser to currentView   ----*/
-   // Fragmenta el rango de laser entre los valores del current view y haya minimos
+   /// Fragmenta el rango de laser entre los valores del current view y haya minimos
    auto size = ceil(double(msg->ranges.size()) / double(_numWindows));
    RCLCPP_DEBUG(this->get_logger(), 
                "seeLaser() Configure for Windows \n ScanSize: %i\n NºWindows:%i \n WindowsSize: %f",
@@ -70,7 +94,7 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
          RCLCPP_DEBUG(this->get_logger(), 
                      "seeLaser() Exceding scan Range");
 
-         if(newSize <= 0) {kWindow=_numWindows; continue;} //Supera tamaño de laserScan 
+         if(newSize <= 0) {kWindow=_numWindows; continue;} ///Supera tamaño de laserScan 
          RCLCPP_DEBUG(this->get_logger(), 
                      "seeLaser() Configure for Windows SubPathSize: %f",newSize);
 
@@ -79,7 +103,7 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
       
       /*----   Take range of Window          ----*/
       std::copy(startW_ptr, endW_ptr, subVec.begin());
-      if(subVec.empty()) continue; //Ingnore if finish laser values
+      if(subVec.empty()) continue; ///Ingnore if finish laser values
 
       /*----   Set Flag for min Value        ----*/
       auto wDistmin  =  *std::min_element(startW_ptr, endW_ptr);
@@ -87,10 +111,10 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
       { 
          pathView.push_back(0);
          
-         if (wDistmin <= _colision_dist)  // Check Collision
+         if (wDistmin <= _colision_dist)  /// Check Collision
          {
             _mtx.lock();
-            _currVision.colision  = true;   // Indica al Controlador temporizado de que inicie Giro
+            _currVision.colision  = true;   /// Indica al Controlador temporizado de que inicie Giro
             if(!_timeOn) _currVision.wColision = kWindow;
             _mtx.unlock();
             newColision = true;
@@ -110,7 +134,7 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
    }
 
    _mtx.lock();
-   if (!newColision)  //Desactiva Indicador Colision si no hay nueva colision
+   if (!newColision)  ///Desactiva Indicador Colision si no hay nueva colision
    {
    _currVision.colision = false;
    colisionTimer(0);
@@ -150,7 +174,7 @@ void Follow::sendDirection()
    if(controllerView.filteredView.empty()) return;
 
    /*----         Action due to Null vision        ----*/
-   if (controllerView.sumView == 0) //BLINDED
+   if (controllerView.sumView == 0) ///BLINDED
    {
       RCLCPP_INFO(this->get_logger(), "sendDirection() BLIND...");
 
@@ -210,6 +234,28 @@ void Follow::sendDirection()
    return;
 }
 
+
+void Follow::colisionTimer(int mode)
+{
+   if (mode + _timeOn != 1) return;
+   
+   if (mode)
+   {
+      RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision UP...");
+      _timeOn       =   true;
+      _colisionInit =   rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
+   }
+   else
+   {
+      RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision DOWN...");
+      _timeOn      =    false;
+      _colisionEnd =    rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
+      RCLCPP_INFO(this->get_logger(), " %f :Time difference = %f [s]",
+                  _colisionInit , 
+                  _colisionEnd - _colisionInit);
+   }
+}
+
 void Follow::logCmdLatency()
 {
    if (_lastCmdStamp.nanoseconds())
@@ -220,7 +266,7 @@ void Follow::logCmdLatency()
                   rclcpp::Clock(RCL_ROS_TIME).now().nanoseconds()/1e9);
 
       _cmdLaten = (rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds() - _lastCmdStamp.nanoseconds())/1e9;
-      // auto ratio  = double(_scanLaten)/double(_cmdLaten);
+      /// auto ratio  = double(_scanLaten)/double(_cmdLaten);
       RCLCPP_DEBUG(this->get_logger(), 
                   "logCmdLatency() Time Measurement \nCmd Latency: %f", _cmdLaten);
    }
@@ -243,25 +289,15 @@ void Follow::logScanLatency()
    _lastScanStamp  = rclcpp::Clock(RCL_SYSTEM_TIME).now();
 }
 
-void Follow::colisionTimer(int mode)
-{
-   if (mode)
-   {
-     if(_timeOn) return;
 
-      RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision UP...");
-      _timeOn       =   true;
-      _colisionInit =   rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
-   }
-   else
-   {
-      if(!_timeOn) return;
-      RCLCPP_INFO(this->get_logger(),"colisionTimer() Timer Colision DOWN...");
-      _timeOn      =    false;
-      _colisionEnd =    rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds()/1e9;
-      RCLCPP_INFO(this->get_logger(), " %f :Time difference = %f [s]",_colisionInit , _colisionEnd - _colisionInit);
-      // cout << "" << _colisionEnd - _colisionInit << endl;
-   }
+void Follow::setupOutput()
+{
+   /// Configure Logging to a File
+   auto filedate  = currentDateTime();
+   auto pid       = getpid();
+   char mypid[6];
+   sprintf(mypid, "%d", pid);
+   freopen((mypid + filedate + ".txt").c_str(), "w", stdout);
 }
 
 void Follow::plotVector(std::vector<float> *vec)
@@ -279,39 +315,32 @@ const std::string Follow::currentDateTime() {
     struct tm  tstruct;
     char       buf[80];
     tstruct = *localtime(&now);
-    // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
-    // for more information about date/time format
+    /// Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
+    /// for more information about date/time format
     strftime(buf, sizeof(buf), "_%Y-%m-%d", &tstruct);
 
     return buf;
 }
 
-void Follow::setLogFile()
-{
-   auto filedate  = currentDateTime();
-   auto pid       = getpid();
-   char mypid[6];
-   sprintf(mypid, "%d", pid);
-   freopen((mypid + filedate + ".txt").c_str(), "w", stdout);
-}
+
 
 int main(int argc, char *argv[])
 {
    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 
-   // Forward command line arguments to ROS
+   /// Forward command line arguments to ROS
    rclcpp::init(argc, argv);
 
-   // Create a ROS2 node
+   /// Create a ROS2 node
    auto node = std::make_shared<Follow>();
 
-   // Run node until it's exited
+   /// Run node until it's exited
    rclcpp::spin(node);
 
-   // rttest_write_results();
-   // rttest_finish();
+   /// rttest_write_results();
+   /// rttest_finish();
 
-   // Clean up
+   /// Clean up
    rclcpp::shutdown();
 
    return 0;

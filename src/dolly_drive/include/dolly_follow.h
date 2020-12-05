@@ -41,31 +41,31 @@ struct Vision
 
 class Follow : public rclcpp::Node
 {
-   public:
-      Follow();
-
-      //----- CALLBACK'S -----//
-      // void onSensorMsg(const sensor_msgs::msg::LaserScan::SharedPtr);
-      void seeLaser(const sensor_msgs::msg::LaserScan::SharedPtr);
+public:
+   Follow();
       
-   private:
-      //----- Functios Vel_cmd Sender -----// 
-      void sendDirection();
+private:
+   void settingInit();
+   
+   void connectSubscriber();
+   void connectPublisher();
+   
+   void seeLaser(const sensor_msgs::msg::LaserScan::SharedPtr);
+   void sendDirection();      //----- Functios Vel_cmd Sender  -----//
 
-      //----- Logs Time Functions ----///
-      void logCmdLatency();
-      void logScanLatency();
-      void colisionTimer(int mode);
+   void colisionTimer(int mode);
+   void logCmdLatency();      //----- Logs Time Functions      ----//
+   void logScanLatency();
 
-      //----- Help Functions ----///
-      void plotVector(std::vector<float> *);
-      const std::string currentDateTime();
-      void setLogFile();
+   //----- Help Functions ----///
+   void setupOutput();
+   void plotVector(std::vector<float> *);
+   const std::string currentDateTime();
 
-    /// Laser messages subscriber
+   /// Laser messages SUSCRIBER
    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr _laser_sub;
 
-   /// Velocity command publisher
+   /// Velocity command PUBLISHER
    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr _cmd_pub;
    rclcpp::TimerBase::SharedPtr _publishTimer;
 
@@ -87,7 +87,7 @@ class Follow : public rclcpp::Node
 
    int    _colisions;
    bool   _newColision;
-  
+
    /*----   Filered View   ----*/
    Vision _currVision;
    int _numWindows; // ¿ToDo? Comprobar que no exede range scan
