@@ -20,7 +20,7 @@ void Follow::settingInit()
    
    /*----   Config Topic's ----*/
    _currVision.filteredView.reserve(_numWindows);
-   _numWindows    =  41;   
+   _numWindows    =  45;   
    _velMax        =  0.5;
    _min_dist      =  0.8;
    _colision_dist =  0.27;
@@ -136,11 +136,15 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
    _mtx.lock();
    if (!newColision)  ///Desactiva Indicador Colision si no hay nueva colision
    {
-   _currVision.colision = false;
-   colisionTimer(0);
-   _currVision.filteredView.clear();
-   _currVision.filteredView = pathView;
-   _currVision.sumView = std::accumulate(pathView.begin(), pathView.end(), 0.0);
+      _currVision.colision = false;
+      colisionTimer(0);
+
+      _currVision.filteredView.clear();
+      _currVision.filteredView = pathView;
+      if (pathView.size() == std::accumulate(pathView.begin(), pathView.end(), 0.0))
+         _currVision.clearPath = true;
+      else
+         _currVision.clearPath = false;
    }   
    else 
    {
@@ -151,12 +155,11 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
 }
 
 void Follow::sendDirection()
-{ 
-   /*----            Action for colision           ----*/    
+{   
    _mtx.lock();
-   if (_currVision.colision)
+   if (_currVision.colision) /// ACTION FOR COLISION
    {
-      auto signe = (_currVision.wColision > _currVision.filteredView.size()/2) ? -1 : 1;
+      auto signe = (_currVision.wColision > _numWindows/2) ? -1 : 1;
       _mtx.unlock();
       RCLCPP_INFO(this->get_logger(),"sendDirection() TURNING...");
       auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
@@ -168,67 +171,48 @@ void Follow::sendDirection()
       return;
    }
 
-   /*----          Take current Vision             ----*/
-   Vision controllerView  = _currVision;
+   /*----          Take current Vision             ----*/ /// NO COLISION
+   Vision controllerView = _currVision;
    _mtx.unlock();
    if(controllerView.filteredView.empty()) return;
 
-   /*----         Action due to Null vision        ----*/
-   if (controllerView.sumView == 0) ///BLINDED
-   {
-      RCLCPP_INFO(this->get_logger(), "sendDirection() TURN BACK...");
+   float angular_dir = 0.0;
+   float lineal_dir  = 0.0;
+   auto filteredSize = static_cast<const int>(controllerView.filteredView.size());
 
-      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_msg->linear.x    = -_velMax * 0.1;
-      cmd_msg->angular.z   = _velMax * 0.7;
-      _cmd_pub->publish(std::move(cmd_msg));
-      logCmdLatency();
-      return;
-   }
-
-   if (controllerView.sumView == controllerView.filteredView.size()) 
+   if (controllerView.clearPath)
    {
       RCLCPP_INFO(this->get_logger(), "sendDirection() CLEAR PATH...");
-
-      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_msg->linear.x    = _velMax;
-      cmd_msg->angular.z   = 0;
-      _cmd_pub->publish(std::move(cmd_msg));
-      logCmdLatency();
-      return;
+      lineal_dir  = _velMax;
+      angular_dir = 0;
    }
-
-   /*----            Driving Acction               ----*/
-   auto middle_ptr = controllerView.filteredView.begin() + (controllerView.filteredView.size() / 2);
-   float angular_dir = 0.0;
-   float lineal_dir = *middle_ptr;
-   RCLCPP_DEBUG(this->get_logger(), "Front Flag = %f",
-                  *middle_ptr);
-
-   for (auto it = controllerView.filteredView.begin(); it != controllerView.filteredView.end(); it++)
+   else
    {
-      auto PropDivision = static_cast<float>(std::distance(middle_ptr, it))/ (controllerView.filteredView.size()/2);
-
-      if (it != middle_ptr && *it>0)
+     RCLCPP_INFO(this->get_logger(), "sendDirection() DRIVING...");
+      auto middle_ptr   = controllerView.filteredView.begin() + (_numWindows / 2);
+      for (auto it = controllerView.filteredView.begin(); it != controllerView.filteredView.end(); it++)
       {
-         angular_dir += *it * PropDivision;
-         RCLCPP_DEBUG(this->get_logger(), "sendDirection() PropDivision= %f",
-                     PropDivision);
+         if (it != middle_ptr && *it>0)
+         {
+            auto PropDivision = static_cast<float>(std::distance(middle_ptr, it))/ (filteredSize/2);
+            angular_dir += *it * PropDivision;
+            RCLCPP_DEBUG(this->get_logger(), "sendDirection() PropDivision= %f",
+                        PropDivision);
+         }
       }
+      if (abs(angular_dir) > _velMax ) angular_dir = (angular_dir > 0 ) ? _velMax : -_velMax;
+      lineal_dir = (1 - abs(angular_dir));
+      RCLCPP_DEBUG(this->get_logger(), "sendDirection() Regule Linear Dir= %f",
+                  abs(angular_dir));    
    }
-   if (abs(angular_dir) > _velMax ) angular_dir = (angular_dir > 0 ) ? _velMax : -_velMax ;
-   RCLCPP_DEBUG(this->get_logger(), "sendDirection() Regule Linear Dir= %f",
-               abs(angular_dir));
-   lineal_dir = (1 - abs(angular_dir));
-   
-   RCLCPP_INFO(this->get_logger(), "sendDirection() DRIVING...");
-   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();  /*----     Assign Values into command           ----*/
+
+   /*----            Send Acction               ----*/
+   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
    cmd_msg->linear.x =  _velMax * lineal_dir;
-   cmd_msg->angular.z = _velMax * angular_dir;
+   cmd_msg->angular.z = _velMax * angular_dir;               
    RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
-               cmd_msg->angular.z,
-               cmd_msg->linear.x);
-               
+         cmd_msg->angular.z,
+         cmd_msg->linear.x);
    _cmd_pub->publish(std::move(cmd_msg));
    logCmdLatency();
    return;

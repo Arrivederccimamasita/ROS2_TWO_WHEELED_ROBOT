@@ -34,9 +34,9 @@ struct Regions
 struct Vision 
 {
    std::vector<float> filteredView;
-   int   sumView;
    bool  colision;
-   int   wColision;
+   bool  clearPath;
+   int   wColision { 0 };
 };   
 
 class Follow : public rclcpp::Node
