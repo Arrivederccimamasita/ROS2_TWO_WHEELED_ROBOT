@@ -22,13 +22,13 @@ void Follow::settingInit()
    _currVision.filteredView.reserve(_numWindows);
    _numWindows    =  41;   
    _velMax        =  0.5;
-   _min_dist      =  0.5;
+   _min_dist      =  0.8;
    _colision_dist =  0.27;
    _colisions     =  0;
    _newColision   =  false;
    _timeOn        =  false;
 
-   // setupOutput(); /// Comment this for terminal output
+   setupOutput(); /// Comment this for terminal output
 }
 
 void Follow::connectSubscriber()
@@ -176,7 +176,7 @@ void Follow::sendDirection()
    /*----         Action due to Null vision        ----*/
    if (controllerView.sumView == 0) ///BLINDED
    {
-      RCLCPP_INFO(this->get_logger(), "sendDirection() BLIND...");
+      RCLCPP_INFO(this->get_logger(), "sendDirection() TURN BACK...");
 
       auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
       cmd_msg->linear.x    = -_velMax * 0.1;
@@ -188,7 +188,7 @@ void Follow::sendDirection()
 
    if (controllerView.sumView == controllerView.filteredView.size()) 
    {
-      RCLCPP_INFO(this->get_logger(), "sendDirection() CLEAR Path...");
+      RCLCPP_INFO(this->get_logger(), "sendDirection() CLEAR PATH...");
 
       auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
       cmd_msg->linear.x    = _velMax;
@@ -198,7 +198,7 @@ void Follow::sendDirection()
       return;
    }
 
-   /*----            Default Acction               ----*/
+   /*----            Driving Acction               ----*/
    auto middle_ptr = controllerView.filteredView.begin() + (controllerView.filteredView.size() / 2);
    float angular_dir = 0.0;
    float lineal_dir = *middle_ptr;
@@ -217,18 +217,18 @@ void Follow::sendDirection()
       }
    }
    if (abs(angular_dir) > _velMax ) angular_dir = (angular_dir > 0 ) ? _velMax : -_velMax ;
-   lineal_dir = (1 - abs(angular_dir));
-   RCLCPP_INFO(this->get_logger(), "sendDirection() Regule Linear Dir= %f",
+   RCLCPP_DEBUG(this->get_logger(), "sendDirection() Regule Linear Dir= %f",
                abs(angular_dir));
+   lineal_dir = (1 - abs(angular_dir));
    
-   /*----     Assign Values into command           ----*/
-   RCLCPP_INFO(this->get_logger(), "sendDirection() DEFAULT...");
-   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
+   RCLCPP_INFO(this->get_logger(), "sendDirection() DRIVING...");
+   auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();  /*----     Assign Values into command           ----*/
    cmd_msg->linear.x =  _velMax * lineal_dir;
    cmd_msg->angular.z = _velMax * angular_dir;
    RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = %f",
                cmd_msg->angular.z,
                cmd_msg->linear.x);
+               
    _cmd_pub->publish(std::move(cmd_msg));
    logCmdLatency();
    return;
@@ -267,8 +267,8 @@ void Follow::logCmdLatency()
 
       _cmdLaten = (rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds() - _lastCmdStamp.nanoseconds())/1e9;
       /// auto ratio  = double(_scanLaten)/double(_cmdLaten);
-      RCLCPP_DEBUG(this->get_logger(), 
-                  "logCmdLatency() Time Measurement \nCmd Latency: %f", _cmdLaten);
+      RCLCPP_INFO(this->get_logger(), 
+                  "logCmdLatency() Cmd Latency: %f", _cmdLaten);
    }
    _lastCmdStamp  = rclcpp::Clock(RCL_SYSTEM_TIME).now();
 }
@@ -283,8 +283,8 @@ void Follow::logScanLatency()
                   rclcpp::Clock(RCL_ROS_TIME).now().nanoseconds()/1e9);
 
       _scanLaten = (rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds() - _lastScanStamp.nanoseconds())/1e9;
-      RCLCPP_DEBUG(this->get_logger(), 
-                  "logScanLatency() Time Measurement \nScan Latency: %f", _scanLaten);
+      RCLCPP_INFO(this->get_logger(), 
+                  "logScanLatency() Scan Latency: %f", _scanLaten);
    }
    _lastScanStamp  = rclcpp::Clock(RCL_SYSTEM_TIME).now();
 }

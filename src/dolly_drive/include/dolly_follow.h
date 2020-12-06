@@ -46,15 +46,14 @@ public:
       
 private:
    void settingInit();
-   
-   void connectSubscriber();
-   void connectPublisher();
+   void connectSubscriber();     //----- /Scan Receiver  -----//
+   void connectPublisher();      //----- /Vel_cmd Sender  -----//
    
    void seeLaser(const sensor_msgs::msg::LaserScan::SharedPtr);
-   void sendDirection();      //----- Functios Vel_cmd Sender  -----//
+   void sendDirection();
 
-   void colisionTimer(int mode);
-   void logCmdLatency();      //----- Logs Time Functions      ----//
+   void colisionTimer(int mode); //----- Logs Time Functions      ----//
+   void logCmdLatency();      
    void logScanLatency();
 
    //----- Help Functions ----///
