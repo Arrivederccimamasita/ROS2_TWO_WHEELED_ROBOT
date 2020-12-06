@@ -28,7 +28,7 @@ from launch_ros.descriptions            import ComposableNode
 
 cmd_topic_name="/simu/cmd"
 scan_topic_name="/simu/scan"
-TOPIC_LIST_SIZE=3
+TOPIC_LIST_SIZE=4
 node_name="follower"
 
 def iterate_topic_name(base_name):
