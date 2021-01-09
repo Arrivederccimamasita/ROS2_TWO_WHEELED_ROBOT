@@ -22,7 +22,7 @@ void Follow::settingInit()
    _currVision.filteredView.reserve(_numWindows);
    _numWindows    =  45;   
    _velMax        =  0.5;
-   _min_dist      =  0.8;
+   _min_dist      =  0.3;
    _colision_dist =  0.27;
    _colisions     =  0;
    _newColision   =  false;
@@ -82,8 +82,8 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
    for (int kWindow = 0; kWindow < _numWindows; ++kWindow)
    {
       /*----   Windows Pointers              ----*/
-      auto startW_ptr   = std::next(msg->ranges.cbegin(), kWindow * size);
-      auto endW_ptr     = std::next(msg->ranges.cbegin(), kWindow * size + size);
+      auto startW_ptr   = std::next(msg->ranges.cbegin(), kWindow * size         );
+      auto endW_ptr     = std::next(msg->ranges.cbegin(), kWindow * size + size  );
       std::vector<float> subVec(size);
  
       /*----   Check if exceding laser range ----*/
@@ -115,7 +115,7 @@ void Follow::seeLaser(sensor_msgs::msg::LaserScan::SharedPtr msg)
          {
             _mtx.lock();
             _currVision.colision  = true;   /// Indica al Controlador temporizado de que inicie Giro
-            if(!_timeOn) _currVision.wColision = kWindow;
+            if(!_timeOn) _currVision.wColision = kWindow; // reference to fist colisioned window detected 
             _mtx.unlock();
             newColision = true;
             RCLCPP_DEBUG(this->get_logger(), "Window's path %i, mindist %f ViewFlag %f ",
@@ -161,13 +161,13 @@ void Follow::sendDirection()
    {
       auto signe = (_currVision.wColision > _numWindows/2) ? -1 : 1;
       _mtx.unlock();
-      RCLCPP_INFO(this->get_logger(),"sendDirection() TURNING...");
-      auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_msg->angular.z   = signe * _velMax * 0.7;
-      RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = 0",
-            cmd_msg->angular.z);
-      _cmd_pub->publish(std::move(cmd_msg));
-      logCmdLatency();
+         RCLCPP_INFO(this->get_logger(),"sendDirection() TURNING...");
+         auto cmd_msg = std::make_unique<geometry_msgs::msg::Twist>();
+         cmd_msg->angular.z   = signe * _velMax * 0.7;
+         RCLCPP_INFO(this->get_logger(), "sendDirection::Angular = %f Lineal = 0",
+               cmd_msg->angular.z);
+         _cmd_pub->publish(std::move(cmd_msg));
+         logCmdLatency();
       return;
    }
 
